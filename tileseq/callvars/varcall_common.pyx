@@ -18,11 +18,45 @@ cdef class Variant:
     cdef readonly str gapped_query_seq
     cdef readonly str gapped_ref_seq
 
-    cdef readonly int n_match, n_mm, n_ins, n_del
+    cdef readonly int n_match, n_mm, n_ins, n_del, n_mm_tv, n_mm_ti
 
     cdef readonly int[:] gapped_query_qual
     cdef readonly int[2] flanking_quals  #-1 means there is no flanking base
     
+    cpdef int get_min_bq_incl_flanks(self):
+
+        # print(np.array(self.gapped_query_qual))
+        # print(np.array(self.flanking_quals)) 
+
+        cdef int themin=int(1e6)
+        cdef int i 
+        for i in range(0, len(self.gapped_query_qual)):
+            if self.gapped_query_qual[i]>=0:
+                themin = min(themin, self.gapped_query_qual[i])
+        if self.flanking_quals[0]>=0:
+            themin=min(themin, self.flanking_quals[0])
+        if self.flanking_quals[1]>=0:
+            themin=min(themin, self.flanking_quals[1])
+        return themin
+
+    cpdef float get_mean_bq_incl_flanks(self):
+        cdef int agg=0, n=0
+        cdef int i 
+        for i in range(0, len(self.gapped_query_qual)):
+            if self.gapped_query_qual[i]>=0:
+                agg += self.gapped_query_qual[i]
+                n+=1
+        if self.flanking_quals[0]>=0:
+            agg+=self.flanking_quals[0]
+            n+=1
+        if self.flanking_quals[1]>=0:
+            agg+=self.flanking_quals[1]
+            n+=1
+        if n>0:
+            return float(agg)/float(n)
+        else:
+            return -1
+
     def __str__(self):
         return "\n".join(
             ["%d match/%d MM/%d INS/%d DEL"%( self.n_match, self.n_mm, self.n_ins, self.n_del ),
@@ -45,6 +79,8 @@ cdef class Variant:
 
         self.n_match = self.n_mm = self.n_ins = self.n_del = 0
 
+        self.n_mm_tv = self.n_mm_ti = 0
+
         self.galign = galign
 
         self.gofs_start=gofs_start
@@ -55,12 +91,14 @@ cdef class Variant:
         self.coz_ref_start = galign.coz_ref_start + galign.gali_ugofsRef[ gofs_start ]
         self.coz_ref_end = galign.coz_ref_start + galign.gali_ugofsRef[ gofs_end ]
 
+        cdef str bpr, bpq
+
         # get flanking qualities
         self.flanking_quals[0]=-1
         gi = self.gofs_start - 1
         while gi >= 0 and (galign.gali_ugofsRead[gi]>=0):
             if galign.gali_nongapRdRefMatch[ gi, 0 ] != 0:
-                self.flanking_quals[ 0 ] = galign.gali_nongapRdRefMatch[ gi, 0 ]
+                self.flanking_quals[ 0 ] = <int>( galign.rd.query_qualities[ galign.gali_ugofsRead[gi] ] )
                 break
             gi-=1
 
@@ -68,7 +106,7 @@ cdef class Variant:
         gi = self.gofs_end + 1
         while gi <= galign.gali_len-1 and (galign.gali_ugofsRead[gi]<len(galign.query_seq)):
             if galign.gali_nongapRdRefMatch[ gi, 0 ] != 0:
-                self.flanking_quals[ 1 ] = galign.gali_nongapRdRefMatch[ gi, 0 ]
+                self.flanking_quals[ 1 ] = <int>( galign.rd.query_qualities[ galign.gali_ugofsRead[gi] ] )
                 break
             gi+=1
 
@@ -84,7 +122,33 @@ cdef class Variant:
                         self.gapped_ref_seq += galign.ref_seq[ galign.gali_ugofsRef[gi] ]
                     else:
                         self.n_mm += 1
-                        self.gapped_query_seq += (galign.query_seq[ galign.gali_ugofsRead[gi] ]).upper()
+
+                        bpq = galign.query_seq[ galign.gali_ugofsRead[gi] ].upper() 
+                        bpr = galign.ref_seq[ galign.gali_ugofsRef[gi] ].upper() 
+                        
+                        if bpq=='A':
+                            if bpr=='G':
+                                self.n_mm_ti += 1
+                            elif (bpr=='C' or bpr=='T'):
+                                self.n_mm_tv += 1
+                        elif bpq=='C':
+                            if bpr=='T':
+                                self.n_mm_ti += 1
+                            elif (bpr=='A' or bpr=='G'):
+                                self.n_mm_tv += 1
+                        elif bpq=='G':
+                            if bpr=='A':
+                                self.n_mm_ti += 1
+                            elif (bpr=='C' or bpr=='T'):
+                                self.n_mm_tv += 1
+                        elif bpq=='T':
+                            if bpr=='C':
+                                self.n_mm_ti += 1
+                            elif (bpr=='A' or bpr=='C'):
+                                self.n_mm_tv += 1
+
+                        self.gapped_query_seq += bpq
+                        # self.gapped_query_seq += (galign.query_seq[ galign.gali_ugofsRead[gi] ]).upper()
                         self.gapped_ref_seq += galign.ref_seq[ galign.gali_ugofsRef[gi] ]
 
                     self.gapped_query_qual[ gi - self.gofs_start ] = <int>( galign.rd.query_qualities[ galign.gali_ugofsRead[gi] ] )
@@ -102,6 +166,8 @@ cdef class Variant:
                     self.gapped_query_seq += '-'
                     self.gapped_ref_seq += galign.ref_seq[ galign.gali_ugofsRef[gi] ]
                     self.n_del+=1
+
+                    self.gapped_query_qual[ gi - self.gofs_start ] = -1
                 else:
                     # this shouldn't happen
                     assert 1==2
@@ -114,24 +180,24 @@ cdef class GappedAlign:
     # coordinate of starting position within the reference
     # 0-based
     # if alignment starts w/ insertion then = reference position preceeding the insertion
-    cdef int coz_ref_start
+    cdef readonly int coz_ref_start
 
     # 0-based
     # if alignment ends w/ insertion then = reference position preceeding insertion
-    cdef int coz_ref_end
+    cdef readonly int coz_ref_end
 
     # gapped alignment
     #   [:,0] --> nongap in read
     #   [:,1] --> nongap in ref
     #   [:,2] --> match
-    cdef int[:,:] gali_nongapRdRefMatch 
+    cdef readonly int[:,:] gali_nongapRdRefMatch 
 
     # ungapped sequence offsets, by gapped alignment position
-    cdef int[:] gali_ugofsRef
-    cdef int[:] gali_ugofsRead
+    cdef readonly int[:] gali_ugofsRef
+    cdef readonly int[:] gali_ugofsRead
 
     # length of gapped alignment
-    cdef int gali_len
+    cdef readonly int gali_len
 
 
     # cdef const unsigned char[:] query_seq 
@@ -150,9 +216,9 @@ cdef class GappedAlign:
         self.rd=rd
 
         self.coz_ref_start = self.rd.reference_start
-        self.coz_ref_end = self.rd.reference_end
+        self.coz_ref_end = self.rd.reference_end - 1 # pysam defines ref end as 1 past last aligned based
 
-        self.ref_seq = reffa.fetch( self.rd.reference_name, self.rd.reference_start, self.rd.reference_end )#.encode('ascii')
+        self.ref_seq = reffa.fetch( self.rd.reference_name, self.rd.reference_start, self.rd.reference_end+1 )#.encode('ascii')
         self.query_seq = self.rd.query_sequence#.encode('ascii')
 
         cdef int ici=0, Nci=len(self.rd.cigartuples)
@@ -240,8 +306,8 @@ cdef class GappedAlign:
         cdef list lvars=[]
         cdef tuple gintv = self.ref_to_gapped_interval( coz_target_start, coz_target_end )
 
-        if not gintv[0]:
-            return None
+        # if not gintv[0]:
+            # return None
 
         cdef int gi = gintv[1]
         cdef int gj
@@ -480,10 +546,13 @@ cdef class GappedAlign:
         
 
     # returns tuple
-    # ( does alignment cover a given range, without having indels @ edges?
+    # ( does alignment cover a given range, without having indels @ edges? 
     #   gapped start ofs
     #   gapped end ofs )
     #  
+
+    # those gapped coords will be -9999999 if the alignment never covers these potisions
+
     cpdef tuple ref_to_gapped_interval( self,
                              int check_coz_ref_start,
                              int check_coz_ref_end ):
@@ -492,39 +561,39 @@ cdef class GappedAlign:
 
         cdef bint covers_start = 0, covers_end = 0
 
+        if self.coz_ref_start + self.gali_ugofsRef[ 0 ] > check_coz_ref_start:
+            covers_start = 0
+
         # is requested start covered?
         for gi in range(0,self.gali_len): # 0 <= gi < self.gali_len:
             # print('checkstart',gi,self.coz_ref_start + self.gali_ugofsRef[ gi ])
-            # does alignment begin AFTER check_coz_ref_start?
-            if self.coz_ref_start + self.gali_ugofsRef[ gi ] > check_coz_ref_start:
-                covers_start = 0
-                break
 
-            # does alignment begin AT check_coz_ref_start but start with an indel?
+            # is there an indel at the queried start position?
             if self.coz_ref_start + self.gali_ugofsRef[ gi ] == check_coz_ref_start:
                 if ( self.gali_nongapRdRefMatch[ gi, 0 ] != 1 or 
                      self.gali_nongapRdRefMatch[ gi, 1 ] != 1 ):
                     covers_start = 0
+                    gistart = gi
                     break
                 else:
                     covers_start = 1
                     gistart = gi
                     break
 
-        if covers_start:
+
+        if self.coz_ref_start + self.gali_ugofsRef[ self.gali_len - 1 ] < check_coz_ref_end:
+            covers_end = False
+        else:
             # is requested end covered?
             for gi in range(self.gali_len - 1, -1, -1):
                 # print('checkend',gi,self.coz_ref_start + self.gali_ugofsRef[ gi ])    
-                # does alignment end AFTER check_coz_end?
-                if self.coz_ref_start + self.gali_ugofsRef[ gi ] < check_coz_ref_end:
-                    covers_end = 0
-                    break
 
-                # does alignment end AT here but s
+                # is there an indel at the queried end position?
                 if self.coz_ref_start + self.gali_ugofsRef[ gi ] == check_coz_ref_end:
                     if ( self.gali_nongapRdRefMatch[ gi, 0 ] != 1 or 
                          self.gali_nongapRdRefMatch[ gi, 1 ] != 1 ):
                         covers_end = 0
+                        giend = gi 
                         break
                     else:
                         covers_end = 1
@@ -534,6 +603,6 @@ cdef class GappedAlign:
         if covers_start and covers_end:
             return (True, gistart, giend)
         else:
-            return (False, -9999999, -9999999)
+            return (False, gistart, giend)
 
 

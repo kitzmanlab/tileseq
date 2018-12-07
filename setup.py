@@ -14,7 +14,7 @@ setup(
 
     # cmdclass = {'build_ext':build_ext},
 
-    packages=['tileseq'],#,'tileseq.align','tileseq.callvars'],
+    packages=['tileseq','tileseq.align','tileseq.callvars'],
 
   #   ext_modules = [ 
   #     Extension('tile_callvar_shared',['tile_callvar_shared.pyx'], extra_objects=glob.glob(op.join( pysam.get_include()[0],'*.so')) ),
