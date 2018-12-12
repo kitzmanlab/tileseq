@@ -291,8 +291,6 @@ def main():
     opts.add_argument('--var_min_mean_bq', default=25, type=int, dest='var_min_mean_bq')
     opts.add_argument('--var_min_min_bq', default=25, type=int, dest='var_min_min_bq')
 
-    # codon_num_offset
-
     o = opts.parse_args()
 
     target_chrom = o.orf_interval[0]
@@ -310,6 +308,49 @@ def main():
 
     bam = pysam.AlignmentFile(o.bam,'rb')
     reffa = pysam.FastaFile( o.ref_fasta )
+
+    ############################
+    # setup output tables w/ counts
+
+    m_codonchg_count={}
+    m_codonchg_info={}
+
+    def ed(s,t):
+        res=0
+        assert len(s)==len(t)
+        for i in range(len(s)):
+            if s[i].upper()!=t[i].upper():
+                res+=1
+        return res
+
+    codon_num = int(( o.tile_target[1] - o.orf_interval[1] ) / 3) + 1
+    corng_codon = ( o.orf_interval[1] + 3*(codon_num-1), o.orf_interval[1] + 3*(codon_num) - 1)
+
+    while corng_codon[1] <= o.orf_interval[2]:
+
+        wt_codon = reffa.fetch( target_chrom, corng_codon[0]-1, corng_codon[1] ).upper()
+        wt_aa = mTransTbl[wt_codon]
+
+        for ocodon in mTransTbl:
+            if wt_codon==ocodon: continue
+            o_aa = mTransTbl[ocodon]
+            m_codonchg_count[ (codon_num,wt_codon,ocodon) ] = 0
+            m_codonchg_info[ (codon_num,wt_codon,ocodon) ] = \
+                {'cdna_coord':1+3*(codon_num-1),
+                 'class': 'nonsense' if o_aa == '*' else ( 'missense' if o_aa!=wt_aa else 'syn'  )
+            m_codonchg_info[ (codon_num,wt_codon,ocodon) ].append( ed(wt_codon,ocodon) )
+
+        codon_num += 1
+        corng_codon = ( o.orf_interval[1] + 3*(codon_num-1), o.orf_interval[1] + 3*(codon_num) - 1)        
+
+    #
+
+    ############################
+
+
+
+
+
 
     Nskipped, Nprocessed = 0, 0
 
@@ -350,12 +391,15 @@ def main():
             if first_chunk:
                 first_chunk=False
 
+
+
             tbl_result = []
+
 
     if len(tbl_result)>0:
         tbl_result = pd.DataFrame.from_dict( tbl_result )
-
         tbl_result.to_csv(o.per_read_tbl, sep='\t', index=False, header=first_chunk, mode='w' if first_chunk else 'a' )
+
 
 if __name__ == '__main__':                
     main()
