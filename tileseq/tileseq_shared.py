@@ -64,4 +64,4 @@ for x in 'ACGT':
             mTransTbl['%s%s%s'%(x,y,z)] = Bio.Seq.Seq( '%s%s%s'%(x,y,z) ).translate().__str__()
 
 maa1to3 = {}
-for aa in 'ACDEFGHIKLMNPQRSTVWY': maa1to3[aa] = Bio.SeqUtils.seq3(aa)
+for aa in 'ACDEFGHIKLMNPQRSTVWY*': maa1to3[aa] = Bio.SeqUtils.seq3(aa)

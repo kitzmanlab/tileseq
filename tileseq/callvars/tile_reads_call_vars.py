@@ -64,6 +64,8 @@ hdrOut = [
 'vars_cdna_eff',
 'vars_pro_eff',
 
+'uncounted_vars',   # uncounted b/c N in query codon
+
 ]
 
 # assumes mapped to same chrom
@@ -111,8 +113,11 @@ def process_cdna_reads(
 
     tile_quals = bamline.query_qualities[ ofsrng_gap[0]:ofsrng_gap[1]+1 ]
 
-    tile_mean_bq = np.mean(tile_quals)
-    tile_min_bq = np.min(tile_quals)
+    if len(tile_quals)>0:
+        tile_mean_bq = np.mean(tile_quals)
+        tile_min_bq = np.min(tile_quals)
+    else:
+        tile_mean_bq=tile_min_bq=-1
 
     out['tile_mean_bq']=tile_mean_bq
     out['tile_min_bq']=tile_min_bq
@@ -162,6 +167,8 @@ def process_cdna_reads(
               'n_codon_mm1','n_codon_mm2','n_codon_mm3','n_codon_syn','n_codon_mis',
               'n_codon_stopgain', 'n_codon_indel_nonfs', 'n_codon_indel_frameshift' ]:
         out[c]=0
+
+    out['uncounted_vars'] = False
 
     if varlist is not None:
         for ivar in range(len(varlist)):
@@ -230,25 +237,29 @@ def process_cdna_reads(
                     out['n_codon_mm3']+=1
 
                 aa_ref_codon = mTransTbl[ seq_ref_codon ]
-                aa_query_codon = mTransTbl[ seq_query_codon ]
 
-                if aa_query_codon == '*' and aa_ref_codon != '*':
-                    out['n_codon_stopgain'] += 1
-
-                    out['vars_pro_eff'].append('%d:%s>*'%( codon_pos_offset+icodon+1, maa1to3[ aa_ref_codon ] ))
-                    out['vars_cdna_eff'].append('%d:%s>%s'%( cdna_pos_offset + 3*(codon_pos_offset+icodon) + 1, seq_ref_codon, seq_query_codon))
-
-
-                elif aa_query_codon == aa_ref_codon :
-                    out['n_codon_syn']+=1
-
-                    out['vars_pro_eff'].append('%d:%s='%( codon_pos_offset+icodon+1, maa1to3[ aa_ref_codon ] ))
-                    out['vars_cdna_eff'].append('%d:%s>%s'%( cdna_pos_offset + 3*(codon_pos_offset+icodon) + 1, seq_ref_codon, seq_query_codon))
+                if 'N' in seq_query_codon:
+                    out['uncounted_vars'] = True
                 else:
-                    out['n_codon_mis'] += 1
+                    aa_query_codon = mTransTbl[ seq_query_codon ]
 
-                    out['vars_pro_eff'].append('%d:%s>%s'%( codon_pos_offset+icodon+1, maa1to3[ aa_ref_codon ], maa1to3[ aa_query_codon ] ))
-                    out['vars_cdna_eff'].append('%d:%s>%s'%( cdna_pos_offset + 3*(codon_pos_offset+icodon) + 1, seq_ref_codon, seq_query_codon))
+                    if aa_query_codon == '*' and aa_ref_codon != '*':
+                        out['n_codon_stopgain'] += 1
+
+                        out['vars_pro_eff'].append('%d:%s>*'%( codon_pos_offset+icodon+1, maa1to3[ aa_ref_codon ] ))
+                        out['vars_cdna_eff'].append('%d:%s>%s'%( cdna_pos_offset + 3*(codon_pos_offset+icodon) + 1, seq_ref_codon, seq_query_codon))
+
+
+                    elif aa_query_codon == aa_ref_codon :
+                        out['n_codon_syn']+=1
+
+                        out['vars_pro_eff'].append('%d:%s='%( codon_pos_offset+icodon+1, maa1to3[ aa_ref_codon ] ))
+                        out['vars_cdna_eff'].append('%d:%s>%s'%( cdna_pos_offset + 3*(codon_pos_offset+icodon) + 1, seq_ref_codon, seq_query_codon))
+                    else:
+                        out['n_codon_mis'] += 1
+
+                        out['vars_pro_eff'].append('%d:%s>%s'%( codon_pos_offset+icodon+1, maa1to3[ aa_ref_codon ], maa1to3[ aa_query_codon ] ))
+                        out['vars_cdna_eff'].append('%d:%s>%s'%( cdna_pos_offset + 3*(codon_pos_offset+icodon) + 1, seq_ref_codon, seq_query_codon))
 
 
     out['vars_pro_eff']=','.join(out['vars_pro_eff'])
@@ -298,59 +309,18 @@ def main():
     if target_chrom!=o.tile_target[0] or target_chrom!=o.tile_amplicon[0]:
         raise ValueError('ORF, target, and full amplicon coords must be on same chrom')
 
-    if not ( isWithin( o.tile_target[1], (o.orf_interval[1], o.orf_interval[2]), fIsInclusive=True ) and \
-             isWithin( o.tile_target[2], (o.orf_interval[1], o.orf_interval[2]), fIsInclusive=True ) ):
-        raise ValueError('target must be fully within ORF')
+    # if not ( isWithin( o.tile_target[1], (o.orf_interval[1], o.orf_interval[2]), fIsInclusive=True ) and \
+    #          isWithin( o.tile_target[2], (o.orf_interval[1], o.orf_interval[2]), fIsInclusive=True ) ):
+    #     raise ValueError('target must be fully within ORF')
 
-    if not ( isWithin( o.tile_amplicon[1], (o.orf_interval[1], o.orf_interval[2]), fIsInclusive=True ) and \
-             isWithin( o.tile_amplicon[2], (o.orf_interval[1], o.orf_interval[2]), fIsInclusive=True ) ):
-        raise ValueError('amplicon must be fully within ORF')
+    # if not ( isWithin( o.tile_amplicon[1], (o.orf_interval[1], o.orf_interval[2]), fIsInclusive=True ) and \
+    #          isWithin( o.tile_amplicon[2], (o.orf_interval[1], o.orf_interval[2]), fIsInclusive=True ) ):
+    #     raise ValueError('amplicon must be fully within ORF')
 
     bam = pysam.AlignmentFile(o.bam,'rb')
     reffa = pysam.FastaFile( o.ref_fasta )
 
     ############################
-    # setup output tables w/ counts
-
-    m_codonchg_count={}
-    m_codonchg_info={}
-
-    def ed(s,t):
-        res=0
-        assert len(s)==len(t)
-        for i in range(len(s)):
-            if s[i].upper()!=t[i].upper():
-                res+=1
-        return res
-
-    codon_num = int(( o.tile_target[1] - o.orf_interval[1] ) / 3) + 1
-    corng_codon = ( o.orf_interval[1] + 3*(codon_num-1), o.orf_interval[1] + 3*(codon_num) - 1)
-
-    while corng_codon[1] <= o.orf_interval[2]:
-
-        wt_codon = reffa.fetch( target_chrom, corng_codon[0]-1, corng_codon[1] ).upper()
-        wt_aa = mTransTbl[wt_codon]
-
-        for ocodon in mTransTbl:
-            if wt_codon==ocodon: continue
-            o_aa = mTransTbl[ocodon]
-            m_codonchg_count[ (codon_num,wt_codon,ocodon) ] = 0
-            m_codonchg_info[ (codon_num,wt_codon,ocodon) ] = \
-                {'cdna_coord':1+3*(codon_num-1),
-                 'class': 'nonsense' if o_aa == '*' else ( 'missense' if o_aa!=wt_aa else 'syn'  )
-            m_codonchg_info[ (codon_num,wt_codon,ocodon) ].append( ed(wt_codon,ocodon) )
-
-        codon_num += 1
-        corng_codon = ( o.orf_interval[1] + 3*(codon_num-1), o.orf_interval[1] + 3*(codon_num) - 1)        
-
-    #
-
-    ############################
-
-
-
-
-
 
     Nskipped, Nprocessed = 0, 0
 

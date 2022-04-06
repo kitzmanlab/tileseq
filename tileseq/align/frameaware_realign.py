@@ -17,7 +17,7 @@ import collections
 import os
 import sys
 
-import frameaware_realign_core
+from tileseq.align import frameaware_realign_core
 
 def main():   
     opts=OptionParser()

@@ -218,7 +218,7 @@ cdef class GappedAlign:
         self.coz_ref_start = self.rd.reference_start
         self.coz_ref_end = self.rd.reference_end - 1 # pysam defines ref end as 1 past last aligned based
 
-        self.ref_seq = reffa.fetch( self.rd.reference_name, self.rd.reference_start, self.rd.reference_end+1 )#.encode('ascii')
+        self.ref_seq = reffa.fetch( self.rd.reference_name, self.rd.reference_start, self.rd.reference_end+1 ).upper() #.encode('ascii')
         self.query_seq = self.rd.query_sequence#.encode('ascii')
 
         cdef int ici=0, Nci=len(self.rd.cigartuples)
