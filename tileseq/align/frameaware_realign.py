@@ -45,7 +45,7 @@ def main():
     frameaware_realign_core.realignFrameaware(
         bamIn,
         bamOut,
-        maxReadLen=600,
+        maxReadLen=1000,
         seqRef=seqRef,
         cozCdsStart=corzCds[0],
         cozCdsEnd=corzCds[1],

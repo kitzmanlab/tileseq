@@ -32,7 +32,6 @@ hdrOut = [
 'readname',
 
 'pass',
-'pass_covers_target',
 'pass_read_bq',
 'pass_vars_bq',
 
@@ -63,6 +62,9 @@ hdrOut = [
 'vars_vcf_style',
 'vars_cdna_eff',
 'vars_pro_eff',
+
+'vars_class', # per-var list of mis,syn,stop,indel_nonfs,indel_fs,other
+'vars_ned', # per-var list of 0,1,2 if mis/syn/stop else +/-L if indel else 0
 
 'uncounted_vars',   # uncounted b/c codon is on edge of alignemnt, or b/c N in query codon
 ]
@@ -111,6 +113,17 @@ def process_cdna_reads(
     if corz_align_isect_orf is None:
         return None
 
+    out['ref_coord_start'] = bamline.reference_start + 1
+    out['ref_coord_end'] = bamline.reference_end + 1
+
+    icodon_rng = (
+        int( (corz_align_isect_orf[0] - orf_interval[1])/3 ),
+        int( (corz_align_isect_orf[1] - orf_interval[1] + 1)/3 )
+    )
+    
+    out['codon_start'] = icodon_rng[0] + codon_pos_offset + 1
+    out['codon_end'] = icodon_rng[1] + codon_pos_offset + 1
+
     # pass_and_ofsgap = gal.ref_to_gapped_interval( bamline.reference_start, bamline.reference_end-1 )
     # problem this is getting tripped up with variants outside orf 
 
@@ -147,6 +160,8 @@ def process_cdna_reads(
 
     out['vars_pro_eff']=[]
     out['vars_cdna_eff']=[]
+    out['vars_class']=[]
+    out['vars_ned']=[]
 
     varlist = gal.find_variants_aggbydist_groupbycodon( 
                 # coz_target_start=bamline.reference_start,
@@ -237,11 +252,17 @@ def process_cdna_reads(
 
                     out['vars_pro_eff'].append('%d:indel_nonfs'%( codon_pos_offset+icodon+1 ))
                     out['vars_cdna_eff'].append('%d:indel_nonfs'%( cdna_pos_offset + 3*(codon_pos_offset+icodon) + 1))
+
+                    out['vars_class'].append('indel_nonfs')
+                    out['vars_ned'].append(len(seq_ref_codon)-len(seq_query_codon))
                 else:
                     out['n_codon_indel_frameshift'] += 1
 
                     out['vars_pro_eff'].append('%d:indel_fs'%( codon_pos_offset+icodon+1 ))
                     out['vars_cdna_eff'].append('%d:indel_fs'%( cdna_pos_offset + 3*(codon_pos_offset+icodon) + 1))
+
+                    out['vars_class'].append('indel_fs')
+                    out['vars_ned'].append(len(seq_ref_codon)-len(seq_query_codon))
             else:
                 out['has_indel']=False
 
@@ -258,6 +279,9 @@ def process_cdna_reads(
 
                 if 'N' in seq_query_codon:
                     out['uncounted_vars'] = True
+
+                    out['vars_class'].append('Ncontain')
+                    out['vars_ned'].append(0)
                 else:
                     aa_query_codon = mTransTbl[ seq_query_codon ]
 
@@ -267,21 +291,32 @@ def process_cdna_reads(
                         out['vars_pro_eff'].append('%d:%s>*'%( codon_pos_offset+icodon+1, maa1to3[ aa_ref_codon ] ))
                         out['vars_cdna_eff'].append('%d:%s>%s'%( cdna_pos_offset + 3*(codon_pos_offset+icodon) + 1, seq_ref_codon, seq_query_codon))
 
+                        out['vars_class'].append('stop')
+                        out['vars_ned'].append(var.n_mm)
 
                     elif aa_query_codon == aa_ref_codon :
                         out['n_codon_syn']+=1
 
                         out['vars_pro_eff'].append('%d:%s='%( codon_pos_offset+icodon+1, maa1to3[ aa_ref_codon ] ))
                         out['vars_cdna_eff'].append('%d:%s>%s'%( cdna_pos_offset + 3*(codon_pos_offset+icodon) + 1, seq_ref_codon, seq_query_codon))
+
+                        out['vars_class'].append('syn')
+                        out['vars_ned'].append(var.n_mm)
                     else:
                         out['n_codon_mis'] += 1
 
                         out['vars_pro_eff'].append('%d:%s>%s'%( codon_pos_offset+icodon+1, maa1to3[ aa_ref_codon ], maa1to3[ aa_query_codon ] ))
                         out['vars_cdna_eff'].append('%d:%s>%s'%( cdna_pos_offset + 3*(codon_pos_offset+icodon) + 1, seq_ref_codon, seq_query_codon))
 
+                        out['vars_class'].append('mis')
+                        out['vars_ned'].append(var.n_mm)
+
 
     out['vars_pro_eff']=','.join(out['vars_pro_eff'])
     out['vars_cdna_eff']=','.join(out['vars_cdna_eff'])
+
+    out['vars_class']=','.join(out['vars_class'])
+    out['vars_ned']=','.join([str(x) for x in out['vars_ned']])
 
     out['pass']= 'pass' if (pass_edges_clean and pass_read_bq and pass_vars_bq) else 'FAIL'
     out['pass_edges_clean']= 'pass' if pass_edges_clean else 'FAIL'

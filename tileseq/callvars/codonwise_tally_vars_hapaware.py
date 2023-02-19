@@ -5,6 +5,7 @@ import pysam
 
 import pandas as pd
 
+import numpy as np
 import numpy.random as rand
 
 from collections import OrderedDict as odict
@@ -62,6 +63,8 @@ def main():
 
     opts.add_argument('--out_count_tbl', required=True, dest='out_count_tbl')
 
+    opts.add_argument('--out_cvg_tbl', required=True, dest='out_cvg_tbl')
+
     opts.add_argument('--out_hap_tbl', required=True, dest='out_hap_tbl')
 
     opts.add_argument('--multi_syn_resolve', default='dontcount', choices=['dontcount','random','first'], dest='multi_syn_resolve', help='when there are multiple syn variants, and only syn variants, how to resolve')
@@ -96,6 +99,8 @@ def main():
     m_codonnum_wtseq={}
     
     Ncodons = int( (o.orf_interval[2]-o.orf_interval[1]+1)/3 )
+
+    codnumz_to_cvg = np.zeros(Ncodons, dtype='int')
 
     for codon_num in range(1, Ncodons+1):
         corz_codon = ( o.orf_interval[1] + 3*(codon_num-1), 
@@ -174,6 +179,12 @@ def main():
                 continue
             else:
                 summary_total_counted+=1
+
+                icstart=int(l['codon_start'])
+                icend=int(l['codon_end'])
+                codnumz_to_cvg[ icstart-1:icend ] += 1
+
+
 
             hapid = l['vars_vcf_style']
 
@@ -378,14 +389,21 @@ def main():
 
     cts_singlemut = pd.Series( cts_singlemut )
     cts_singlemut_plussyn = pd.Series( cts_singlemut_plussyn )
-    
+
     bycodon_tbl = pd.DataFrame( tbl_muts_templ ).set_index( ['aa_num','codon_ref','codon_mut'] )
     bycodon_tbl['singlemut_reads'] = cts_singlemut
     bycodon_tbl['singlemut_reads'] = bycodon_tbl['singlemut_reads'].fillna(0).astype(int)
     bycodon_tbl['singlemut_allowsyn_reads'] = cts_singlemut_plussyn
     bycodon_tbl['singlemut_allowsyn_reads'] = bycodon_tbl['singlemut_allowsyn_reads'].fillna(0).astype(int)
 
+    cvg_tbl=pd.DataFrame(
+        { 'codon_num':np.arange(1,Ncodons+1),
+          'total_pass_reads': codnumz_to_cvg }  )
+
     bycodon_tbl.to_csv( o.out_count_tbl, sep='\t' )
+
+    if o.out_cvg_tbl is not None:
+        cvg_tbl.to_csv( o.out_cvg_tbl, index=False, sep='\t' )
 
     sys.stderr.write('done\n')
     sys.stderr.flush()

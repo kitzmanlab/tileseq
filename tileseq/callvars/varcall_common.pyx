@@ -3,8 +3,8 @@ cimport numpy as np
 import numpy as np
 
 from pysam.libcfaidx cimport FastaFile
-from pysam.libcalignedsegment cimport AlignedSegment
-
+from pysam.libcalignedsegment cimport AlignedSegment 
+ 
 # cython: c_string_type=str, c_string_encoding=ascii
 cdef class Variant:
     
@@ -225,7 +225,7 @@ cdef class GappedAlign:
         cdef int ci0
         cdef int cozgPrev=0, cozgNext=0
 
-        cdef int iung_ref=0, iung_query=0, ctr=0
+        cdef int iung_ref=-999999, iung_query=-999999, ctr=0
 
         self.gali_len = 0
         for ici in range(0,Nci): #0 <= ici < Nci:
@@ -249,45 +249,67 @@ cdef class GappedAlign:
                 self.gali_nongapRdRefMatch[ cozgPrev:cozgNext, 1 ] = 1  
 
                 for ctr in range(cozgPrev, cozgNext) : #cozgPrev <= ctr < cozgNext:
+                    if iung_ref<0: 
+                        iung_ref=0
+                    else:
+                        iung_ref+=1
+
+                    if iung_query<0:
+                        iung_query=0
+                    else:
+                        iung_query+=1
+
                     # print('CIGAR0 ctr,iung_query,iung_ref: ',ctr,iung_query,iung_ref)
                     self.gali_ugofsRef[ctr] = iung_ref
                     self.gali_ugofsRead[ctr] = iung_query
                     self.gali_nongapRdRefMatch[ ctr, 2 ] = <int>(self.query_seq[iung_query]==self.ref_seq[iung_ref])
-                    iung_ref+=1
-                    iung_query+=1
+
+
 
             elif ci0==1: # insertion to ref
                 self.gali_nongapRdRefMatch[ cozgPrev:cozgNext, 0 ] = 1
                 self.gali_nongapRdRefMatch[ cozgPrev:cozgNext, 1 ] = 0
 
                 for ctr in range(cozgPrev, cozgNext) :  # cozgPrev <= ctr < cozgNext:
+                    if iung_query<0:
+                        iung_query=0
+                    else:
+                        iung_query+=1
+
                     # print('CIGAR INS ctr,iung_query,iung_ref: ',ctr,iung_query,iung_ref)
                     self.gali_ugofsRef[ctr] = iung_ref
                     self.gali_ugofsRead[ctr] = iung_query
                     self.gali_nongapRdRefMatch[ ctr, 2 ] = 0
-                    iung_query+=1
 
             elif ci0==2: # deletion from ref
                 self.gali_nongapRdRefMatch[ cozgPrev:cozgNext, 0 ] = 0
                 self.gali_nongapRdRefMatch[ cozgPrev:cozgNext, 1 ] = 1
 
                 for ctr in range(cozgPrev, cozgNext) : #  cozgPrev <= ctr < cozgNext:
+                    if iung_ref<0: 
+                        iung_ref=0
+                    else:
+                        iung_ref+=1
+
                     # print('CIGAR DEL ctr,iung_query,iung_ref: ',ctr,iung_query,iung_ref)
                     self.gali_ugofsRef[ctr] = iung_ref
                     self.gali_ugofsRead[ctr] = iung_query
                     self.gali_nongapRdRefMatch[ ctr, 2 ] = 0
-                    iung_ref+=1
 
             elif ci0==4: # masked query
                 self.gali_nongapRdRefMatch[ cozgPrev:cozgNext, 0 ] = -1
                 self.gali_nongapRdRefMatch[ cozgPrev:cozgNext, 1 ] = 0
 
                 for ctr in range(cozgPrev, cozgNext) : # for  cozgPrev <= ctr < cozgNext:
+                    if iung_query<0:
+                        iung_query=0
+                    else:
+                        iung_query+=1
+
                     # print('CIGAR MASK ctr,iung_query,iung_ref: ',ctr,iung_query,iung_ref)
                     self.gali_ugofsRef[ctr] = iung_ref
                     self.gali_ugofsRead[ctr] = iung_query
                     self.gali_nongapRdRefMatch[ ctr, 2 ] = 0
-                    iung_query+=1
 
 
     cpdef debug_dump( self ):

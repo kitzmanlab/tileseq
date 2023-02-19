@@ -36,6 +36,11 @@ hdrOut = [
 'pass_read_bq',
 'pass_vars_bq',
 
+'ref_coord_start',
+'ref_coord_end',
+'codon_start',      #first codon number completely covered; 1 based; 0 if none
+'codon_end',        #last codon number completely covered; 1 based; 0 if none  
+
 'sum_ed_dist',
 'sum_bp_ins',
 'sum_bp_del',
@@ -64,9 +69,29 @@ hdrOut = [
 'vars_cdna_eff',
 'vars_pro_eff',
 
+'vars_class', # per-var list of mis,syn,stop,indel_nonfs,indel_fs,other
+'vars_ned', # per-var list of 0,1,2 if mis/syn/stop else +/-L if indel else 0
+ 
 'uncounted_vars',   # uncounted b/c N in query codon
 
 ]
+
+def rgOverlap(bounds1, bounds2):
+    if (min(bounds1) >= min(bounds2) and min(bounds1) <= max(bounds2) ) or \
+       (max(bounds1) >= min(bounds2) and max(bounds1) <= max(bounds2) ) or \
+       (min(bounds2) >= min(bounds1) and min(bounds2) <= max(bounds1) ) or \
+       (max(bounds2) >= min(bounds1) and max(bounds2) <= max(bounds1) ):
+        return 1
+    else:
+        return 0
+
+
+def rngIntersect(bounds1, bounds2): 
+    if bounds1==None or bounds2==None: return None
+    elif rgOverlap(bounds1,bounds2) : return tuple(sorted(list(bounds1)+list(bounds2))[1:3])
+    else: return None
+
+
 
 # assumes mapped to same chrom
 # assumes target and amplicon are fully contained within ORF  
@@ -105,6 +130,28 @@ def process_cdna_reads(
 
     gal = GappedAlign( bamline, ref_fasta )
 
+
+    corz_align_isect_orf = rngIntersect(
+        (bamline.reference_start, bamline.reference_end-1),
+        (orf_interval[1], orf_interval[2]) )
+
+    # is alignment outside of the orf?
+    if corz_align_isect_orf is None:
+        return None
+
+    out['ref_coord_start'] = bamline.reference_start + 1
+    out['ref_coord_end'] = bamline.reference_end + 1
+
+    icodon_rng = (
+        int( (corz_align_isect_orf[0] - orf_interval[1])/3 ),
+        int( (corz_align_isect_orf[1] - orf_interval[1] + 1)/3 )
+    )
+    
+    out['codon_start'] = icodon_rng[0] + codon_pos_offset + 1
+    out['codon_end'] = icodon_rng[1] + codon_pos_offset + 1
+
+
+
     pass_and_ofsgap = gal.ref_to_gapped_interval( tile_target[1], tile_target[2] )
     ofsrng_gap = (pass_and_ofsgap[1],pass_and_ofsgap[2])
 
@@ -136,6 +183,8 @@ def process_cdna_reads(
 
     out['vars_pro_eff']=[]
     out['vars_cdna_eff']=[]
+    out['vars_class']=[]
+    out['vars_ned']=[]
 
     varlist = gal.find_variants_aggbydist_groupbycodon( 
                 coz_target_start=tile_target[1], 
@@ -145,6 +194,8 @@ def process_cdna_reads(
                 strand=-1 if orf_strand=='-' else 1,
                 frame_start=0,
                 maxdist=2 )
+
+    out['has_indel']=False
 
     if varlist is not None and len(varlist)>0:
         lv_minbq = [ v.get_min_bq_incl_flanks() for v in varlist ]    
@@ -219,14 +270,19 @@ def process_cdna_reads(
 
                     out['vars_pro_eff'].append('%d:indel_nonfs'%( codon_pos_offset+icodon+1 ))
                     out['vars_cdna_eff'].append('%d:indel_nonfs'%( cdna_pos_offset + 3*(codon_pos_offset+icodon) + 1))
+
+                    out['vars_class'].append('indel_nonfs')
+                    out['vars_ned'].append(len(seq_ref_codon)-len(seq_query_codon))
                 else:
                     out['n_codon_indel_frameshift'] += 1
 
                     out['vars_pro_eff'].append('%d:indel_fs'%( codon_pos_offset+icodon+1 ))
                     out['vars_cdna_eff'].append('%d:indel_fs'%( cdna_pos_offset + 3*(codon_pos_offset+icodon) + 1))
-            else:
-                out['has_indel']=False
 
+                    out['vars_class'].append('indel_fs')
+                    out['vars_ned'].append(len(seq_ref_codon)-len(seq_query_codon))
+
+            else:
                 assert len(seq_ref_codon) == len(seq_query_codon) == 3
 
                 if var.n_mm == 1:
@@ -240,6 +296,9 @@ def process_cdna_reads(
 
                 if 'N' in seq_query_codon:
                     out['uncounted_vars'] = True
+
+                    out['vars_class'].append('Ncontain')
+                    out['vars_ned'].append(0)
                 else:
                     aa_query_codon = mTransTbl[ seq_query_codon ]
 
@@ -249,21 +308,33 @@ def process_cdna_reads(
                         out['vars_pro_eff'].append('%d:%s>*'%( codon_pos_offset+icodon+1, maa1to3[ aa_ref_codon ] ))
                         out['vars_cdna_eff'].append('%d:%s>%s'%( cdna_pos_offset + 3*(codon_pos_offset+icodon) + 1, seq_ref_codon, seq_query_codon))
 
+                        out['vars_class'].append('stop')
+                        out['vars_ned'].append(var.n_mm)
 
                     elif aa_query_codon == aa_ref_codon :
                         out['n_codon_syn']+=1
 
                         out['vars_pro_eff'].append('%d:%s='%( codon_pos_offset+icodon+1, maa1to3[ aa_ref_codon ] ))
                         out['vars_cdna_eff'].append('%d:%s>%s'%( cdna_pos_offset + 3*(codon_pos_offset+icodon) + 1, seq_ref_codon, seq_query_codon))
+
+                        out['vars_class'].append('syn')
+                        out['vars_ned'].append(var.n_mm)
+
                     else:
                         out['n_codon_mis'] += 1
 
                         out['vars_pro_eff'].append('%d:%s>%s'%( codon_pos_offset+icodon+1, maa1to3[ aa_ref_codon ], maa1to3[ aa_query_codon ] ))
                         out['vars_cdna_eff'].append('%d:%s>%s'%( cdna_pos_offset + 3*(codon_pos_offset+icodon) + 1, seq_ref_codon, seq_query_codon))
+                        
+                        out['vars_class'].append('mis')
+                        out['vars_ned'].append(var.n_mm)
 
 
     out['vars_pro_eff']=','.join(out['vars_pro_eff'])
     out['vars_cdna_eff']=','.join(out['vars_cdna_eff'])
+
+    out['vars_class']=','.join(out['vars_class'])
+    out['vars_ned']=','.join([str(x) for x in out['vars_ned']])
 
     out['pass']= 'pass' if (pass_covers_target and pass_read_bq and pass_vars_bq) else 'FAIL'
     out['pass_covers_target']= 'pass' if pass_covers_target else 'FAIL'

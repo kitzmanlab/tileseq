@@ -64,8 +64,11 @@ cpdef realignFrameaware(
     ):
 
     cdef AlignedSegment rd
-    cdef int hasDel
+    cdef int hasDel, hasMaskOrSupp
     cdef int cozRdStart,cozRdEnd
+
+    cdef int isigstart, ofsqstart
+    cdef int ncigop
 
     cdef int[::1] arseqRef = -9999999*np.ones( len(seqRef), dtype=np.int32 )
     convertSeqToArray( seqRef, arseqRef )
@@ -80,13 +83,30 @@ cpdef realignFrameaware(
 
     cdef int rlen
 
+    cdef bytes qseq
+
     for rd in bamIn:
         hasDel=0
+
+        ncigop = len(rd.cigar)
+
+        hasMaskOrSupp = 0
+
+        if rd.is_supplementary:
+            continue
 
         for cpart in rd.cigar:
             if cpart[0]==2:
                 hasDel=1
                 break
+            elif cpart[0]==4 or cpart[0]==5:
+                hasMaskOrSupp = 1
+                break
+        
+        # eliminate masked reads at this point
+        if hasMaskOrSupp==1:
+            # masking, skip
+            continue
 
         if hasDel==0:
             # no deletion; passthru
@@ -98,11 +118,30 @@ cpdef realignFrameaware(
             # but the .query does NOT include these bases
             # 
             #  -> simply skip these reads.
-            if rd.cigar[0][0] == 2:
-                continue
+            
+            # 2-2023 - debugging...
+            #if rd.cigar[0][0] == 2:
+            #    continue
 
-            cozRdStart=rd.pos
-            cozRdEnd=cozRdStart+rd.alen-1
+            # if ins or del blocks or both are the first op, then skip past them
+            cozRdStart=rd.reference_start
+            cozRdEnd=rd.reference_end
+
+            icigstart = 0
+            ofsqstart = 0
+            while icigstart<ncigop and rd.cigar[icigstart][0] != 0:   
+                if rd.cigar[icigstart][0] == 1:
+                    # ins to ref. 
+                    ofsqstart += rd.cigar[icigstart][1]
+                elif rd.cigar[icigstart][0] == 2:
+                    # del from ref
+                    cozRdStart += rd.cigar[icigstart][1]
+                elif rd.cigar[icigstart][0] != 4:
+                    # 4 / soft mask OK, nothing to do.
+                    raise ValueError('unexpected cigar op',rd.cigar[icigstart],rd.qname,rd.cigar)
+                icigstart+=1
+
+            #print(ofsqstart)
 
             # in case there is a really large deletion, (permanently) expand the score martix to accomodate.
             while cozRdEnd-cozRdStart+1 > maxSizeOnRef:
@@ -111,13 +150,18 @@ cpdef realignFrameaware(
 
             arseqRd[:]=-999999
             rlen = rd.qlen
-            convertSeqToArray( rd.query.encode('utf-8'), arseqRd )
+
+            qseq = rd.query_alignment_sequence.encode('utf-8')
+            convertSeqToArray( qseq[ofsqstart:], arseqRd )
 
             frameAtS2start = (cozRdStart - cozCdsStart)%3
 
             #print 'rd name ',rd.qname
             #print 'rd.rdStart ', cozRdStart, ' frameAtS2start ', frameAtS2start
-            #print 'rd.seq ',rd.query
+            #print(rd.reference_start, rd.reference_end, rd.query_alignment_start, rd.query_alignment_end)
+            #print(rd.get_aligned_pairs(with_seq=True))
+            #print 'rd.seq ',rd.query_alignment_sequence
+            #print 'rd.seq passed',qseq[ofsqstart:]
             #print ' ofsCdsBounds:  ', cozCdsStart-cozRdStart,'  ', cozCdsEnd-cozRdStart
             #print 'rd.alen, passed s2len ',( rd.alen, arseqRef[ cozRdStart:cozRdEnd+1 ].shape[0] )
             #print ' ',(scoreMtx.shape[0],scoreMtx.shape[1],scoreMtx.shape[2])
