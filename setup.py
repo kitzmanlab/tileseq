@@ -22,14 +22,17 @@ setup(
 
 # ext_modules =  cythonize(Extension("frameaware_realign_core", ["tileseq/align/frameaware_realign_core.pyx"]), annotate=True),
 
-    ext_modules =  cythonize(["tileseq/align/frameaware_realign_core.pyx",
-                              "tileseq/callvars/varcall_common.pyx"]),
+    ext_modules =  cythonize(["tileseq/callvars/varcall_common.pyx"]),
 
     include_dirs = [numpy.get_include()]+pysam.get_include(),
     define_macros = pysam.get_defines(),
 
     entry_points = {
-        'console_scripts': [ 'frameaware_realign = tileseq.align.frameaware_realign:main',
+        'console_scripts': [ 'filt_indel_mask_aligns = tileseq.align.filt_indel_mask_aligns:main',
+                             'tile_reads_call_vars = tileseq.callvars.tile_reads_call_vars:main',
+                             'codonwise_tally_vars_hapaware = tileseq.callvars.codonwise_tally_vars_hapaware:main',
+
+                             'qc_summary_plots = tileseq.plots.qc_summary_plots:main'
                            ]
     }
 )

@@ -72,7 +72,7 @@ hdrOut = [
 'vars_class', # per-var list of mis,syn,stop,indel_nonfs,indel_fs,other
 'vars_ned', # per-var list of 0,1,2 if mis/syn/stop else +/-L if indel else 0
  
-'uncounted_vars',   # uncounted b/c N in query codon
+'uncounted_vars',   # uncounted b/c N in query codon, or b/c a variant hangs off edge
 
 ]
 
@@ -247,6 +247,13 @@ def process_cdna_reads(
 
             coz_codon = ((orf_interval[1] + icodon * 3),
                          (orf_interval[1] + (icodon+1) * 3 - 1) )
+                         
+            # make sure that the mutated codon does not hang off the edge of the target
+            if (coz_codon[0] < tile_target[1]) or (coz_codon[1] > tile_target[2]):
+                out['uncounted_vars'] = True
+                out['vars_class'].append('offEdge')
+                out['vars_ned'].append(0)
+                continue
 
             frame_varstart = (var.coz_ref_start - orf_interval[1]) % 3
             frame_varend = (var.coz_ref_end + 1 - orf_interval[1]) % 3

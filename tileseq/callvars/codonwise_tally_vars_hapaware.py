@@ -67,6 +67,8 @@ def main():
 
     opts.add_argument('--out_hap_tbl', required=True, dest='out_hap_tbl')
 
+    opts.add_argument('--out_byread_status_tbl', required=True, dest='out_byread_status_tbl')
+
     opts.add_argument('--multi_syn_resolve', default='dontcount', choices=['dontcount','random','first'], dest='multi_syn_resolve', help='when there are multiple syn variants, and only syn variants, how to resolve')
 
 
@@ -95,6 +97,8 @@ def main():
         v=splitvar(v)
         return ed( v[1],v[2] )
 
+    hdr_out_byreadstatus = ['readname','status']
+
     #initialize list of codons in the tile 
     m_codonnum_wtseq={}
     
@@ -116,13 +120,15 @@ def main():
     summary_indelfs=0
     summary_indelnonfs_only=0
     summary_syn_only=0
-    summary_singlemis_only=0
     summary_stopgain=0
+    summary_singlemis_only=0
     summary_singlemis_inclsyn=0
+    summary_multimis_only=0
+    summary_multimis_inclsyn=0
     summary_other=0
 
-    summary_total_counted=0
-    summary_total_skipped=0
+    #summary_total_counted=0
+    summary_skip_readfail=0
 
     lcolout_mutstbl = ['aa_num','codon_ref','codon_mut','cdna_coord','aa_ref','aa_mut','class','ed_dist']
 
@@ -158,6 +164,8 @@ def main():
 
     reader = pd.read_table(o.per_read_tbl, chunksize=10000)
 
+    first_chunk=True
+
     ctr=0
     for chunk in reader:
 
@@ -165,31 +173,36 @@ def main():
         lacc_smtbl=[]
         lacc_as_smtbl=[]
 
+        tbl_out_byreadstatus = { k:[] for k in  hdr_out_byreadstatus  }
+
         for _,l in chunk.iterrows():
             ctr+=1
 
             count_in_tally=False
+
+            tbl_out_byreadstatus['readname'].append(l['readname'])
 
             if ctr%10000 == 0:
                 sys.stderr.write('%d..'%(ctr))
                 sys.stderr.flush()
 
             if l['pass']!='pass': 
-                summary_total_skipped+=1
+                summary_skip_readfail+=1
+                tbl_out_byreadstatus['status'].append('skipped')
                 continue
             else:
-                summary_total_counted+=1
+                #summary_total_counted+=1
 
                 icstart=int(l['codon_start'])
                 icend=int(l['codon_end'])
                 codnumz_to_cvg[ icstart-1:icend ] += 1
 
-
-
             hapid = l['vars_vcf_style']
 
             if l['is_wt']:
                 summary_wt+=1
+
+                tbl_out_byreadstatus['status'].append('wildtype')
 
                 if hapid not in m_hap_idx:
                     ihap = len(tbl_haps_out['hap'])
@@ -212,6 +225,8 @@ def main():
 
             if l['n_codon_indel_frameshift']>0:
                 summary_indelfs+=1
+
+                tbl_out_byreadstatus['status'].append('indelfs')
 
                 if hapid not in m_hap_idx:
                     ihap = len(tbl_haps_out['hap'])
@@ -236,6 +251,8 @@ def main():
                 if l['n_codon_indel_nonfs']==1 and\
                    (l['n_codon_syn']+l['n_codon_mis']+l['n_codon_stopgain'])==0:                    
 
+                    tbl_out_byreadstatus['status'].append('indelnonfs')
+
                     if hapid not in m_hap_idx:
                         ihap = len(tbl_haps_out['hap'])
                         m_hap_idx[hapid] = ihap
@@ -257,6 +274,8 @@ def main():
                     summary_indelnonfs_only+=1
                     continue
                 else:
+
+                    tbl_out_byreadstatus['status'].append('other')
 
                     if hapid not in m_hap_idx:
                         ihap = len(tbl_haps_out['hap'])
@@ -282,7 +301,6 @@ def main():
             if l['n_codon_stopgain'] > 0:
                 curstatus='stopgain'
                 summary_stopgain += 1
-
             elif l['n_codon_mis'] == 1 :
                 if l['n_codon_syn'] == 0:  # and stopgain==0
                     curstatus='singlemis'
@@ -293,10 +311,16 @@ def main():
             elif l['n_codon_mis'] == 0 and l['n_codon_syn'] >= 1: # and stopgain==0
                 curstatus = 'syn_only'
                 summary_syn_only += 1
+            elif l['n_codon_mis'] >=2 :
+                if l['n_codon_syn'] >= 1:
+                    curstatus = 'multimis_inclsyn'
+                    summary_multimis_inclsyn += 1
+                else:
+                    curstatus = 'multimis'
+                    summary_multimis_only += 1
             else:
                 curstatus = 'other2'
                 summary_other += 1
-
 
             scv=None
 
@@ -323,6 +347,8 @@ def main():
                 lcurvar,lpro = l['vars_cdna_eff'].split(','), l['vars_pro_eff'].split(',')
 
                 if o.multi_syn_resolve == 'dontcount':
+
+                    tbl_out_byreadstatus['status'].append(curstatus+'_notcounted')
 
                     if hapid not in m_hap_idx:
                         ihap = len(tbl_haps_out['hap'])
@@ -355,13 +381,14 @@ def main():
                     scv = (1+int((scv[0]-1)/3),scv[1],scv[2])
                     cts_singlemut_plussyn[ scv ] += 1
 
+            tbl_out_byreadstatus['status'].append(curstatus)
+
             if scv is not None:
 
                 # as of now, some like double mis are not counted and fall through the above block with scv still None.  
                 # 
                 # need to modify this script to be able to track higher order combos of missense w/ syn haplotypes
                 #
-
                 if hapid not in m_hap_idx:
                     ihap = len(tbl_haps_out['hap'])
                     m_hap_idx[hapid] = ihap
@@ -380,6 +407,11 @@ def main():
                     ihap = m_hap_idx[hapid]
 
                 tbl_haps_out['total_counts'][ihap]+=1
+        
+        if len(tbl_out_byreadstatus['readname'])>0:
+            tbl_out_byreadstatus = pd.DataFrame.from_dict( tbl_out_byreadstatus )
+            tbl_out_byreadstatus.to_csv(o.out_byread_status_tbl, sep='\t', index=False, header=first_chunk, mode='w' if first_chunk else 'a' )
+            first_chunk = False
 
     tbl_haps_out = pd.DataFrame(tbl_haps_out)
     tbl_haps_out['aa_num'] = tbl_haps_out['aa_num'].astype(int)
@@ -408,16 +440,17 @@ def main():
     sys.stderr.write('done\n')
     sys.stderr.flush()
 
+    print('summary_skip_readfail',summary_skip_readfail)
     print('summary_wt',summary_wt)
     print('summary_indelfs',summary_indelfs)
     print('summary_indelnonfs_only',summary_indelnonfs_only)
     print('summary_syn_only',summary_syn_only)
-    print('summary_singlemis_only',summary_singlemis_only)
     print('summary_stopgain',summary_stopgain)
+    print('summary_singlemis_only',summary_singlemis_only)
     print('summary_singlemis_inclsyn',summary_singlemis_inclsyn)
+    print('summary_multimis_only',summary_multimis_only)
+    print('summary_multimis_inclsyn',summary_multimis_inclsyn)
     print('summary_other',summary_other)
-    print('summary_total_counted',summary_total_counted)
-    print('summary_total_skipped',summary_total_skipped)
 
 if __name__ == '__main__':                
     main()
