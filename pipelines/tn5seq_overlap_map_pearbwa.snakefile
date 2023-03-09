@@ -8,7 +8,7 @@
 #   - libname  (unique name for each library)
 #   - fastq_fwd  (path to forward read fastq file)
 #   - fastq_rev  (path to reverse read fastq file)
-#   - target_name (which is the tile/target?  This must match one entry in the tiledef_table)
+#   - target_name (which is the tile/target? )
 #
 # ref_fasta - path to a fasta file containing the reference from which to get the tileseq primer sequences
 #
@@ -33,17 +33,7 @@
 #######################################################
 # For example, to run:
 #  
-# snakemake -s /nfs/kitzman1/jacob/dev/tileseq/pipelines/tileseq_overlap_map_pearbwa.snakefile \
-#     --printshellcmds \
-#     --cores 32 \
-#     --config \
-#         sample_table=testing0219.2.txt \
-#         tiledef_table=msh6_tileseq_primers_wpilot_lenti492.txt \
-#         outdir=tsprocess \
-#         ref_fasta=jkp0492_plenti_MSH6_2Abl.fa \
-#         ref_seqname=jkp0492_plenti_MSH6_2Abl \
-#         keycol=libname \
-#         ngmerge_options="-q 30 -t 30 -p 0.001 -v 15 -c 80" 
+# ....
 
 
 import os.path as op
@@ -66,12 +56,13 @@ BWA_OPTIONS = config['bwa_options'] if 'bwa_options' in config else '-A2 -E1 -L5
 # TODOC
 TRIM_ADAPTOR_OPTS = "-a CTGTCTCTTATACACATCTCCGAGCCCACGAGAC -A CTGTCTCTTATACACATCTGACGCTGCCGACGA --minimum-length 40:40"
 
-
 MAX_INDEL_LEN = int(config['max_indel_len']) if 'max_indel_len' in config else 10
 
 PREFIX = config['prefix'] if 'prefix' in config  else ''
 OUT_DIR = config['outdir']
 NGMERGE_OPTIONS = config['ngmerge_options'] if 'ngmerge_options' in config else '-m 20 -d '
+
+DOWNSAMP_PAIRS = int(config['downsamp_pairs']) if 'downsamp_pairs' in config else 200000
 
 ########
 # load and check sample table.
@@ -92,10 +83,11 @@ tblSamples = tblSamples.set_index( KEYCOL,drop=False )
 assert 'outdir' in config, 'must specify output directory'
 
 lOutBam =  expand('{}/align/sorted/{}{{libname}}.s.bam'.format(OUT_DIR,PREFIX), libname=lLibs)
+lOutBamDs = expand('{}/align/downsamp/{}{{libname}}.ds.bam'.format(OUT_DIR,PREFIX), libname=lLibs)
 
 outRpt = OUT_DIR+'/'+PREFIX+'merge_report.txt'
 
-lOutFiles = [outRpt] + lOutBam 
+lOutFiles = [outRpt] + lOutBam  + lOutBamDs
 
 ########
 
@@ -112,7 +104,11 @@ rule trimadaptors:
         fq_fwd_trim = temp(op.join(OUT_DIR,'fastq/'+PREFIX+'{libname}.trim.fwd.fq')),
         fq_rev_trim = temp(op.join(OUT_DIR,'fastq/'+PREFIX+'{libname}.trim.rev.fq')),
         trim_log = op.join(OUT_DIR,'fastq/'+PREFIX+'{libname}.destuff.log'),
-    threads: 32
+    resources:
+        mem_per_cpu="4gb", 
+        cpus="24", 
+        time="1:00:00"
+    threads: 24
     run:
         shell("""
             cutadapt -j {threads} {TRIM_ADAPTOR_OPTS} -o {output.fq_fwd_trim} -p {output.fq_rev_trim} {input.fq_fwd} {input.fq_rev} > {output.trim_log}
@@ -132,7 +128,11 @@ rule overlap:
     params:
         fq_overlap_base = op.join(OUT_DIR,'fastq/'+PREFIX+'{libname}'),
         temp_unasm_base=temp(op.join(OUT_DIR,'fastq/'+PREFIX+'{libname}.unassembled')),
-    threads: 30
+    threads: 24
+    resources:
+        mem_per_cpu="4gb", 
+        cpus="24", 
+        time="1:00:00"
     run:
         # shell("""   
         #     pear -j{threads} --forward-fastq {input.fq_fwd} --reverse-fastq {input.fq_rev} {PEAR_OPTIONS} -o {params.fq_overlap_base}
@@ -153,7 +153,11 @@ rule align:
         bam_nonovl = temp(op.join(OUT_DIR,'align/unsorted/'+PREFIX+'{libname}.nonovl.raw.bam')),
     params:
         options = BWA_REF + " " + BWA_OPTIONS
-    threads: 30
+    threads: 24
+    resources:
+        mem_per_cpu="4gb", 
+        cpus="24", 
+        time="1:00:00"
     run:
         shell( r"""
             bwa mem  -t {threads} {params.options} {input.asm_fq} | samtools view -@ {threads} -bS - > {output.bam_ovl};
@@ -169,6 +173,10 @@ rule align_filt_ovl:
     params:
         libname=lambda wc: wc.libname
     threads: 1
+    resources:
+        mem_per_cpu="4gb", 
+        cpus="1", 
+        time="1:00:00"
     run:
         shell("filt_indel_mask_aligns --bam_in {input.bam} --bam_out {output.bam} --libname {params.libname} --tbl_out {output.counts_out} --max_del_len {MAX_INDEL_LEN} --max_ins_len {MAX_INDEL_LEN} --max_clip_len 0")
 
@@ -181,6 +189,10 @@ rule align_filt_nonovl:
     params:
         libname=lambda wc: wc.libname
     threads: 1
+    resources:
+        mem_per_cpu="4gb", 
+        cpus="1", 
+        time="1:00:00"
     run:
         shell("filt_indel_mask_aligns_PE --bam_in {input.bam} --bam_out {output.bam} --libname {params.libname} --tbl_out {output.counts_out} --max_del_len {MAX_INDEL_LEN} --max_ins_len {MAX_INDEL_LEN} --max_clip_len 0;")
 
@@ -189,15 +201,41 @@ rule join_bam:
         bam_ovl = rules.align_filt_ovl.output.bam,
         bam_nonovl = rules.align_filt_nonovl.output.bam, 
     output:
-        bam = op.join(OUT_DIR,'align/sorted/'+PREFIX+'{libname}.s.bam')
-    threads: 8
+        bam = op.join(OUT_DIR,'align/sorted/'+PREFIX+'{libname}.s.bam'),
+        bam_idxstats = op.join(OUT_DIR,'align/sorted/'+PREFIX+'{libname}.idxstats.txt'),
+    threads: 24
+    resources:
+        mem_per_cpu="4gb", 
+        cpus="24", 
+        time="1:00:00"
     run:
-        shell("samtools sort -@{threads} <(samtools merge -@ {threads} {input.bam_ovl} {input.bam_nonovl} -o {output.bam}; samtools sort -@{threads} {output.bam} )")
+        shell("samtools sort -@{threads} -m2G <(samtools merge -@ {threads} -o - {input.bam_ovl} {input.bam_nonovl} ) -o {output.bam}; samtools index -@{threads} {output.bam} ; samtools idxstats {output.bam} > {output.bam_idxstats}")
+
+
+rule downsample_bam:
+    input:
+        bam = rules.join_bam.output.bam,
+        bam_idxstats = rules.join_bam.output.bam_idxstats,
+    output:
+        bam_downsamp = op.join(OUT_DIR,'align/downsamp/'+PREFIX+'{libname}.ds.bam'),
+    threads: 4
+    resources:
+        mem_per_cpu="4gb", 
+        cpus="4", 
+        time="1:00:00"
+    run:
+        cts_bam = 1 + pd.read_table(input.bam_idxstats,header=None)[2].sum()
+        frac_ds = min(1.0, DOWNSAMP_PAIRS / cts_bam)
+        
+        shell('samtools view -b --subsample %.5f {input.bam} > {output.bam_downsamp} ; samtools index -@{threads} {output.bam_downsamp}'%(
+             frac_ds
+        ))
+
 
 def findline_cutadapt_log(fn):
     ll=[l.rstrip() for l in open(fn,'r').readlines()]
     lnprocd = [ x.group(1).replace(',','') for x in [re.search('.*Total read pairs processed:.*?([0-9,]+)',l) for l in ll ] if x]
-    lnwritten = [ x.group(1).replace(',','') for x in [re.search('.*Reads written \(passing filters\):.*?([0-9,]+)',l) for l in ll ] if x]
+    lnwritten = [ x.group(1).replace(',','') for x in [re.search('.*Pairs written \(passing filters\):.*?([0-9,]+)',l) for l in ll ] if x]
     assert len(lnwritten)==1, 'not exactly one line with num of reads written in cutadpat log '+fn
     return int(lnprocd[0]), int(lnwritten[0])
 
@@ -209,12 +247,20 @@ rule outtbl:
         counts_ovl_bam_filt = expand(rules.align_filt_ovl.output.counts_out, libname=lLibs),
         counts_nonovl_bam_filt = expand(rules.align_filt_nonovl.output.counts_out, libname=lLibs),
         bam = expand( rules.join_bam.output.bam, libname=lLibs ),
+        bam_downsamp = expand( rules.downsample_bam.output.bam_downsamp, libname=lLibs ),
     output:
         table_out=outRpt #op.join(OUT_DIR,PREFIX+'sample_table.txt')
+    resources:
+        mem_per_cpu="4gb", 
+        cpus="1", 
+        time="1:00:00"
     run:
         tbl_out = pd.read_table( config['sample_table'] )
 
+        tbl_out = tbl_out.set_index('libname',drop=False)
+
         tbl_out['bam'] = list(input.bam)
+        tbl_out['bam_downsamp'] = list(input.bam_downsamp)
 
         tbl_out['nreads_input'] = [ findline_cutadapt_log(fn)[0] for fn in input.trimadapt_log ]
         tbl_out['nreads_postadtrim'] = [ findline_cutadapt_log(fn)[1] for fn in input.trimadapt_log ]
@@ -226,10 +272,14 @@ rule outtbl:
         # gather alignment stats
         align_stats_ovl = [ pd.read_csv(fn,index_col=0) for fn in input.counts_ovl_bam_filt ]
         align_stats_ovl = pd.concat( align_stats_ovl, 1 ).transpose()
+        align_stats_ovl.columns = [ cn+'_ovlreads' for cn in align_stats_ovl.columns ]
+
         tbl_out = pd.concat( [tbl_out, align_stats_ovl], 1 )
 
         align_stats_nonovl = [ pd.read_csv(fn,index_col=0) for fn in input.counts_nonovl_bam_filt ]
         align_stats_nonovl = pd.concat( align_stats_nonovl, 1 ).transpose()
+        align_stats_nonovl.columns = [ cn+'_nonovlreads' for cn in align_stats_nonovl.columns ]
+        
         tbl_out = pd.concat( [tbl_out, align_stats_nonovl], 1 )
 
         tbl_out.to_csv(output['table_out'],sep='\t',index=False)

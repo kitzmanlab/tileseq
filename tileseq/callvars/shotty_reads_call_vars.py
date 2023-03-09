@@ -212,9 +212,13 @@ def process_cdna_reads(
             out['sum_bp_nti'] += var.n_mm_ti
             out['sum_bp_ntv'] += var.n_mm_tv
 
-            if ed_cur == 0:
-                out['is_wt']=True
-            else:
+            # 2-2023 - TODO - BUGS IN THE HANDLING OF GAPS BELOW.  FOR NOW
+            # JUST SHORT CIRCUIT IT BY SETTING EVERYTHING W/ INS|DEL TO HAS INDEL AND NCODON INDEL FS
+            if (var.n_ins>0) or (var.n_del>0):
+                out['has_indel']=True
+                out['n_codon_indel_frameshift'] += 1
+
+            if ed_cur != 0:
                 out['is_wt']=False
 
             # find codon # containing vairant

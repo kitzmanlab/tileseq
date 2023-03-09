@@ -8,6 +8,8 @@ import pandas as pd
 import numpy as np
 import numpy.random as rand
 
+rand.seed(0)
+
 from collections import OrderedDict as odict
 from collections import defaultdict
 
@@ -136,6 +138,8 @@ def main():
     m_hap_idx = {}
     tbl_haps_out = { k:[] for k in 
         ['hap','status','total_counts','counted_codonwise']+lcolout_mutstbl }
+
+    mhapid_rand = {}
 
     tbl_muts_templ = { k:[] for k in 
         lcolout_mutstbl }
@@ -331,6 +335,7 @@ def main():
                 scv = splitvar(curvar)
                 scv = (1+int((scv[0]-1)/3),scv[1],scv[2])
                 cts_singlemut[ scv ] += 1
+
             elif (l['n_codon_stopgain']+l['n_codon_mis'])==1 and l['n_codon_syn']>1:
                 # one stopgain or mis
                 for curvar,pro in zip( l['vars_cdna_eff'].split(','), 
@@ -347,31 +352,18 @@ def main():
                 lcurvar,lpro = l['vars_cdna_eff'].split(','), l['vars_pro_eff'].split(',')
 
                 if o.multi_syn_resolve == 'dontcount':
-
-                    tbl_out_byreadstatus['status'].append(curstatus+'_notcounted')
-
-                    if hapid not in m_hap_idx:
-                        ihap = len(tbl_haps_out['hap'])
-                        m_hap_idx[hapid] = ihap
-                        tbl_haps_out['hap'].append(hapid)
-                        tbl_haps_out['status'].append(curstatus+'_notcounted')
-                        tbl_haps_out['total_counts'].append(0)
-                        tbl_haps_out['counted_codonwise'].append(False)
-                        tbl_haps_out['aa_num'].append(scv[0])
-                        tbl_haps_out['codon_ref'].append(scv[1])
-                        tbl_haps_out['codon_mut'].append(scv[2])
-                        rec_cod2aa = tbl_muts_templ2.loc[ scv ]
-                        for c in ['cdna_coord','aa_ref','aa_mut','class']:
-                            tbl_haps_out[c].append(rec_cod2aa[c])
-                        tbl_haps_out['ed_dist'].append(l['sum_ed_dist'])
-                    else:
-                        ihap = m_hap_idx[hapid]
-
-                    tbl_haps_out['total_counts'][ihap]+=1
-
-                    continue
+                    curstatus = curstatus + '_notcounted'
+                    scv = None
                 elif o.multi_syn_resolve == 'random':
-                    isyn = rand.randint(0,len(lcurvar))
+                    # needs to resolve to the same randomly selected syn var each time this hap is encounterered
+                    # if hapid not in mhapid_rand :
+                    if l['vars_cdna_eff'] not in mhapid_rand:  # key on the cdna eff instead of hapid, b/c of edge case where sometimes shotgun read starts midway thru a codon and sometimes not, and if a var in that codon its sometimes counted other times not
+                        isyn = rand.randint(0,len(lcurvar))
+                        mhapid_rand[hapid]=isyn
+                    else:
+                        # isyn = mhapid_rand[hapid]
+                        isyn = mhapid_rand[l['vars_cdna_eff']]
+
                     scv = splitvar(lcurvar[isyn])
                     scv = (1+int((scv[0]-1)/3),scv[1],scv[2])
                     cts_singlemut_plussyn[ scv ] += 1
@@ -405,8 +397,24 @@ def main():
                     tbl_haps_out['ed_dist'].append(l['sum_ed_dist'])
                 else:
                     ihap = m_hap_idx[hapid]
+            else:
+                if hapid not in m_hap_idx:
+                    ihap = len(tbl_haps_out['hap'])
+                    m_hap_idx[hapid] = ihap
+                    tbl_haps_out['hap'].append(hapid)
+                    tbl_haps_out['status'].append(curstatus)
+                    tbl_haps_out['total_counts'].append(0)
+                    tbl_haps_out['counted_codonwise'].append(False)
+                    tbl_haps_out['aa_num'].append(-1)
+                    tbl_haps_out['codon_ref'].append('')
+                    tbl_haps_out['codon_mut'].append('')
+                    for c in ['cdna_coord','aa_ref','aa_mut','class']:
+                        tbl_haps_out[c].append('')
+                    tbl_haps_out['ed_dist'].append(l['sum_ed_dist'])
+                else:
+                    ihap = m_hap_idx[hapid]
 
-                tbl_haps_out['total_counts'][ihap]+=1
+            tbl_haps_out['total_counts'][ihap]+=1
         
         if len(tbl_out_byreadstatus['readname'])>0:
             tbl_out_byreadstatus = pd.DataFrame.from_dict( tbl_out_byreadstatus )

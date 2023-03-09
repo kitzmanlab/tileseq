@@ -31,6 +31,8 @@
 #
 #   discords_to_n  - set this to a value (any value) to direct PEAR to mark discordant overlapping bases w/ N
 #
+#   cutadapt_trimpri_opts - options passed to cutadapt for constant flanking tileseq primer trimming
+#
 #   bwa_ref - path to bwa reference - if not listen then it is assumed that ref_fasta points to a bwa-indexed fasta file 
 #
 #   bwa_options - options to pass to bwa (surrounded by quotes); by default :  "-A2 -E1 -L50,50 -B2"
@@ -77,6 +79,8 @@ OUT_DIR = config['outdir']
 PEAR_OPTIONS = config['pear_options']
 if 'discords_to_n' in config:
     if '-z' not in PEAR_OPTIONS: PEAR_OPTIONS+=' -z '
+
+CUTADAPT_TRIMPRI_OPTS = config['cutadapt_trimpri_opts'] if 'cutadapt_trimpri_opts' in config else ' --error-rate 0.1 --overlap 24 '
 
 STUFFERS = ['GGAGACGCTCAGTACGTCTAAAGCGGCCGCacgtagtgaCCTGCAGGTTTAATGCACGTAGTCGTCTCC',
             'ctta GCAGGTG CTCAGTACGTC ac GCGGCCGC acgtagtga CCTGCAGG at ATGCACGTAGT CACCTGC gcga'.lower().replace(' ','')]
@@ -146,6 +150,10 @@ rule countinputs:
     output:
         counts_input = op.join(OUT_DIR,'fastq/'+PREFIX+'{libname}.input.linects.txt')
     threads: 8
+    resources:
+        mem_per_cpu="4gb", 
+        cpus="8", 
+        time="0:30:00"
     run:
         shell("""
             pigz -d -c -p8 {input.fq_fwd} | wc -l > {output.counts_input}
@@ -165,7 +173,11 @@ rule overlap:
         temp_disc_fq=temp(op.join(OUT_DIR,'fastq/'+PREFIX+'{libname}.discarded.fastq'))
     params:
         fq_overlap_base = op.join(OUT_DIR,'fastq/'+PREFIX+'{libname}')
-    threads: 30
+    threads: 24
+    resources:
+        mem_per_cpu="4gb", 
+        cpus="24", 
+        time="1:00:00"
     run:
         shell("""   
             pear -j{threads} --forward-fastq {input.fq_fwd} --reverse-fastq {input.fq_rev} {PEAR_OPTIONS} -o {params.fq_overlap_base}
@@ -178,7 +190,11 @@ rule destuffer:
     output:
         counts_out = op.join(OUT_DIR,'fastq/'+PREFIX+'{libname}.destuff.log'),
         destuff_fq = temp(op.join(OUT_DIR,'fastq/'+PREFIX+'{libname}.destuff.fastq')),
-    threads: 30
+    threads: 24
+    resources:
+        mem_per_cpu="4gb", 
+        cpus="24", 
+        time="1:00:00"
     run:
         stuffarg = ' '.join( ['-b %s '%stuff for stuff in STUFFERS] )
 
@@ -195,7 +211,11 @@ rule trim_tilepris:
         trim_fq = op.join(OUT_DIR,'fastq/'+PREFIX+'{libname}.fq.gz'),
     params:
         libname=lambda wc: wc.libname
-    threads: 30
+    threads: 24
+    resources:
+        mem_per_cpu="4gb", 
+        cpus="24", 
+        time="1:00:00"
     run:
         seqtrim_left = tblSamples.loc[params.libname, 'seqtrim_left']
         seqtrim_right = tblSamples.loc[params.libname, 'seqtrim_right']
@@ -203,10 +223,10 @@ rule trim_tilepris:
         # don't reverse complement since we are on merged reads
 
         trimarg = '-a "^%s...%s"'%( seqtrim_left, seqtrim_right )
-        
+            
         shell("""
-            cutadapt %s --error-rate 0.1 --overlap 24 --discard-untrimmed -j {threads} -o {output.trim_fq} {input.fq} > {output.counts_out}
-        """%(trimarg))
+            cutadapt %s %s --discard-untrimmed -j {threads} -o {output.trim_fq} {input.fq} > {output.counts_out}
+        """%(trimarg, CUTADAPT_TRIMPRI_OPTS ))
     
 
 rule align:
@@ -214,7 +234,11 @@ rule align:
         fq = rules.trim_tilepris.output.trim_fq
     output:
         bam = temp(op.join(OUT_DIR,'align/unsorted/'+PREFIX+'{libname}.raw.bam')),
-    threads: 30
+    threads: 24
+    resources:
+        mem_per_cpu="4gb", 
+        cpus="24", 
+        time="1:00:00"
     run:
         # if 'exclude_n_containing' in config:
         #     cmd=r"""
@@ -235,7 +259,10 @@ rule align_filt:
         counts_out = op.join(OUT_DIR,'align/unsorted/'+PREFIX+'{libname}.bamfilt.counts.txt'),
     params:
         libname=lambda wc: wc.libname
-    threads: 1
+    resources:
+        mem_per_cpu="4gb", 
+        cpus="2", 
+        time="1:00:00"
     run:
         shell("filt_indel_mask_aligns --bam_in {input.bam} --bam_out {output.bam} --libname {params.libname} --tbl_out {output.counts_out} --max_del_len {MAX_INDEL_LEN} --max_ins_len {MAX_INDEL_LEN} --max_clip_len 0")
 
@@ -256,12 +283,16 @@ rule outtbl:
         counts_postdestuff = expand(rules.destuffer.output.counts_out, libname=lLibs),
         counts_postpritrim = expand(rules.trim_tilepris.output.counts_out, libname=lLibs),
         counts_align = expand(rules.align_filt.output.counts_out, libname=lLibs),
+    resources:
+        mem_per_cpu="4gb", 
+        cpus="2", 
+        time="0:30:00"
     output:
         table_out=outRpt #op.join(OUT_DIR,PREFIX+'sample_table.txt')
     run:
         tbl_out = pd.read_table( config['sample_table'] )
 
-        tbl_out['bam'] = input.bam
+        tbl_out['bam'] = list(input.bam)
 
         tbl_out['nreads_input'] = [int(open(fn,'r').readline().strip().split()[0]) for fn in input.counts_input ]
         assert (all(tbl_out['nreads_input']%4)==0), '#lines in input one of the input fqs not div by 4!'
