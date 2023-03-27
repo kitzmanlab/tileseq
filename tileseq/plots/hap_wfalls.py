@@ -57,6 +57,7 @@ def plot_varfreq_wfall_allcodonposs_byed(
             
     plt.suptitle('{}\nOn-tile missense mutations, #reads by rank'.format(title))
 
+    return f, ax
 
 
 def plot_wfall_hapcts(
@@ -404,6 +405,17 @@ def main():
     cmd_hapwfall.add_argument('--logy', default=False, action='store_true', dest='logy')
     cmd_hapwfall.add_argument('--out', required=True, dest='out')
 
+    cmd_varwfall = sp.add_parser('varwfall')
+
+    cmd_varwfall.add_argument('--in_varcts', required=True, dest='in_hapcts')
+    cmd_varwfall.add_argument('--incl_nonsense', required=True, dest='incl_nonsense')
+    cmd_varwfall.add_argument('--incl_syn', required=True, dest='incl_syn')
+    cmd_varwfall.add_argument('--desc', required=True, dest='desc')
+    cmd_varwfall.add_argument('--aarng', required=True, type=intRange, dest='aarng')
+    # cmd_varwfall.add_argument('--xrel', default=False, action='store_true', dest='xrel')
+    # cmd_varwfall.add_argument('--logy', default=False, action='store_true', dest='logy')
+    cmd_varwfall.add_argument('--out', required=True, dest='out')
+
     cmd_comparesamps = sp.add_parser('comparesamps')
 
     cmd_comparesamps.add_argument('--in_samptbl', required=True, dest='in_samptbl')
@@ -437,7 +449,33 @@ def main():
             logx=o.logx
         )
         
-        f.savefig( o.out, facecolor='white' )
+        f.savefig( o.out, facecolor='white', dpi=200)
+    
+    elif o.cmd == 'varwfall':
+        tblvarcts = pd.read_table(o.in_varcts)
+
+        tblvarcts = vartbl_samp.loc[
+            vartbl_samp['aa_num'].between( o.aarng[0], o.aarng[1] )
+        ]
+        
+        li_incl = tblvarcts['class']=='MIS'
+        if o.incl_nonsense:
+            li_incl |= tblvarcts['class']=='NON'
+        if o.incl_syn:
+            li_incl |= tblvarcts['class']=='SYN'
+
+        tblvarcts = tblvarcts.loc[ li_incl ]
+
+        f = plot_varfreq_wfall_allcodonposs_byed(
+            tblvarcts,
+            o.desc,
+            count_col = 'singlemut_allowsyn_reads',
+            psuedocount=0.1,
+            logy=True,
+            xrel=True,
+        )
+        
+        f.savefig( o.out, facecolor='white', dpi=200)
     
     elif o.cmd == 'comparesamps':
         samptbl = pd.read_table(o.in_samptbl)

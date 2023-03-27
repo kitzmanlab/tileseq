@@ -149,7 +149,7 @@ rule mkplots:
         libname=lambda wc: wc.libname,
     output:
         varbypos = op.join(OUT_DIR,'plots_varbypos/'+PREFIX+'{libname}.varbypos.png'),
-        # varwfall = op.join(OUT_DIR,'plots_varwfall/'+PREFIX+'{libname}.varwf.png'),
+        varwfall = op.join(OUT_DIR,'plots_varwfall/'+PREFIX+'{libname}.varwf.png'),
         hapwfall = op.join(OUT_DIR,'plots_hapwfall/'+PREFIX+'{libname}.hapwf.png'),
     run:
         # PADBP=120
