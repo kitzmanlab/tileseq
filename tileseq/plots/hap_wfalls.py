@@ -407,9 +407,9 @@ def main():
 
     cmd_varwfall = sp.add_parser('varwfall')
 
-    cmd_varwfall.add_argument('--in_varcts', required=True, dest='in_hapcts')
-    cmd_varwfall.add_argument('--incl_nonsense', required=True, dest='incl_nonsense')
-    cmd_varwfall.add_argument('--incl_syn', required=True, dest='incl_syn')
+    cmd_varwfall.add_argument('--in_varcts', required=True, dest='in_varcts')
+    cmd_varwfall.add_argument('--incl_nonsense', default=False, action='store_true', dest='incl_nonsense')
+    cmd_varwfall.add_argument('--incl_syn', default=False, action='store_true', dest='incl_syn')
     cmd_varwfall.add_argument('--desc', required=True, dest='desc')
     cmd_varwfall.add_argument('--aarng', required=True, type=intRange, dest='aarng')
     # cmd_varwfall.add_argument('--xrel', default=False, action='store_true', dest='xrel')
@@ -454,8 +454,8 @@ def main():
     elif o.cmd == 'varwfall':
         tblvarcts = pd.read_table(o.in_varcts)
 
-        tblvarcts = vartbl_samp.loc[
-            vartbl_samp['aa_num'].between( o.aarng[0], o.aarng[1] )
+        tblvarcts = tblvarcts.loc[
+            tblvarcts['aa_num'].between( o.aarng[0], o.aarng[1] )
         ]
         
         li_incl = tblvarcts['class']=='MIS'
@@ -466,7 +466,7 @@ def main():
 
         tblvarcts = tblvarcts.loc[ li_incl ]
 
-        f = plot_varfreq_wfall_allcodonposs_byed(
+        f, ax = plot_varfreq_wfall_allcodonposs_byed(
             tblvarcts,
             o.desc,
             count_col = 'singlemut_allowsyn_reads',

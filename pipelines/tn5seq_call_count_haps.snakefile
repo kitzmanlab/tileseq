@@ -7,6 +7,13 @@
 #   - libname  (unique name for each library)
 #   - bam
 #   - target_name (which is the tile/target?
+
+# > tiledef_table, e.g., the tileseq_primers.txt file output by dmschef.
+#   one row per tile/target being mutagenized 
+#   required columns
+#   - target_name (name of this target, e.g., tile02)
+#   - target_start,	target_end - start/end of the tile
+
 #
 # ref_fasta - path to a fasta file containing the reference from which to get the tileseq primer sequences
 #
@@ -39,6 +46,7 @@ import Bio.Seq
 ########
 
 assert 'sample_table' in config, 'must specify sample table'
+assert 'tiledef_table' in config, 'must specify tile definition table'
 assert 'ref_fasta' in config, 'must specify path to fasta of reference sequence'
 assert 'ref_seqname' in config, 'must specify name of reference chromosome within [ref_fasta]'
 assert 'orf_interval' in config, 'must specify orf coordinate range'
@@ -59,7 +67,21 @@ l_reqd_cols = [ KEYCOL, 'bam', 'target_name' ]
 tblSamples = pd.read_table( config['sample_table'] )
 assert all( [ col in tblSamples.columns for col in l_reqd_cols ] ), 'sample table must have columns: '+','.join(l_reqd_cols)
 assert len(set(tblSamples[KEYCOL])) == tblSamples.shape[0], 'all libname entries must be unique'
-    
+
+l_reqd_cols_td = [ 'target_name', 'target_start','target_end',]
+tblTileDefs = pd.read_table( config['tiledef_table'] )
+assert all( [ col in tblTileDefs.columns for col in l_reqd_cols_td ] ), 'tile definition table must have columns: '+','.join(l_reqd_cols_td)
+
+assert ( len(set(tblSamples['target_name']) - set(tblTileDefs['target_name'])))==0, 'tiles %s are not in the tile defintion table, '+','.join(
+    set(tblSamples['target_name']) - set(tblTileDefs['target_name'])) 
+
+tblSamples = pd.merge(
+    tblSamples,
+    tblTileDefs,
+    how='left',
+    on='target_name'
+)
+
 lLibs = tblSamples[KEYCOL].unique()
 
 tblSamples = tblSamples.set_index( KEYCOL,drop=False )
@@ -69,7 +91,7 @@ tblSamples = tblSamples.set_index( KEYCOL,drop=False )
 
 assert 'outdir' in config, 'must specify output directory'
 
-lout_callvars =  expand('{}/callvars/{}{{libname}}.perread.txt'.format(OUT_DIR,PREFIX), libname=lLibs)
+lout_callvars =  expand('{}/callvars/{}{{libname}}.perread.txt.gz'.format(OUT_DIR,PREFIX), libname=lLibs)
 lout_haps =  expand('{}/counts/{}{{libname}}.byhap.txt'.format(OUT_DIR,PREFIX), libname=lLibs)
 lout_counts =  expand('{}/counts/{}{{libname}}.byvar.txt'.format(OUT_DIR,PREFIX), libname=lLibs)
 
@@ -90,7 +112,7 @@ rule callvars:
     input:
         bam = lambda wc: tblSamples.loc[ wc.libname ][ 'bam' ],
     output:
-        perreadtbl = op.join(OUT_DIR,'callvars/'+PREFIX+'{libname}.perread.txt'),
+        perreadtbl = op.join(OUT_DIR,'callvars/'+PREFIX+'{libname}.perread.txt.gz'),
     params:
         ref_fasta = config['ref_fasta'],
         ref_seqname = config['ref_seqname'],
@@ -152,16 +174,14 @@ rule mkplots:
         varwfall = op.join(OUT_DIR,'plots_varwfall/'+PREFIX+'{libname}.varwf.png'),
         hapwfall = op.join(OUT_DIR,'plots_hapwfall/'+PREFIX+'{libname}.hapwf.png'),
     run:
-        # PADBP=120
-        # corng_amp_pad = ( tblSamples.loc[params.libname, 'amp_start']-PADBP,
-        #                   tblSamples.loc[params.libname, 'amp_end']+PADBP  )
-
         corng_orf = ( int(config['orf_interval'].split('-')[0]),int(config['orf_interval'].split('-')[1]) )
-
         codon_max = 1+int((1+corng_orf[1]-corng_orf[0]) / 3)
 
-        # codonrng_amp_pad = ( int( 1+(corng_amp_pad[0]-corng_orf[0])/3 ), 
-        #                     int( 1+(corng_amp_pad[1]-corng_orf[0])/3 ) )
+        corng_target = ( tblSamples.loc[params.libname, 'target_start'],
+                          tblSamples.loc[params.libname, 'target_end']  )
+
+        aarng_target = ( 1 + int( (corng_target[0]-corng_orf[0])/3 ),
+                         1 + int( (corng_target[1]-corng_orf[0])/3 ) )
 
         shell("""
             plot_mut_freq_by_pos --in_varcts {input.vartbl} --in_varcvg {input.cvgtbl} --desc "{params.libname}" --out {output.varbypos} --codon_range %d,%d
@@ -172,6 +192,12 @@ rule mkplots:
         shell("""
             hap_wfalls hapwfall --in_hapcts {input.haptbl} --desc "{params.libname}" --remove_wt --logx --logy --out {output.hapwfall}
         """)        
+
+        shell("""
+            hap_wfalls varwfall --in_varcts {input.vartbl} --aarng %d,%d --desc "{params.libname} missense only" --out {output.varwfall}
+        """%(
+            aarng_target[0], aarng_target[1]) )        
+
 
 
 rule outtbl:

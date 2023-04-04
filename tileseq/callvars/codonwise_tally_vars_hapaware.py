@@ -166,7 +166,7 @@ def main():
     cts_singlemut = defaultdict(int)
     cts_singlemut_plussyn = defaultdict(int)
 
-    reader = pd.read_table(o.per_read_tbl, chunksize=10000)
+    reader = pd.read_table(o.per_read_tbl, chunksize=10000, compression='infer')
 
     first_chunk=True
 

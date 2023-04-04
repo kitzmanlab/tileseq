@@ -92,7 +92,7 @@ tblSamples = tblSamples.set_index( KEYCOL,drop=False )
 
 assert 'outdir' in config, 'must specify output directory'
 
-lout_callvars =  expand('{}/callvars/{}{{libname}}.perread.txt'.format(OUT_DIR,PREFIX), libname=lLibs)
+lout_callvars =  expand('{}/callvars/{}{{libname}}.perread.txt.gz'.format(OUT_DIR,PREFIX), libname=lLibs)
 lout_haps =  expand('{}/counts/{}{{libname}}.byhap.txt'.format(OUT_DIR,PREFIX), libname=lLibs)
 lout_counts =  expand('{}/counts/{}{{libname}}.byvar.txt'.format(OUT_DIR,PREFIX), libname=lLibs)
 
@@ -114,7 +114,7 @@ rule callvars:
     input:
         bam = lambda wc: tblSamples.loc[ wc.libname ][ 'bam' ],
     output:
-        perreadtbl = op.join(OUT_DIR,'callvars/'+PREFIX+'{libname}.perread.txt'),
+        perreadtbl = op.join(OUT_DIR,'callvars/'+PREFIX+'{libname}.perread.txt.gz'),
     params:
         ref_fasta = config['ref_fasta'],
         ref_seqname = config['ref_seqname'],
@@ -152,7 +152,7 @@ rule tallyvars:
         haptbl = op.join(OUT_DIR,'counts/'+PREFIX+'{libname}.byhap.txt'),
         vartbl = op.join(OUT_DIR,'counts/'+PREFIX+'{libname}.byvar.txt'),
         cvgtbl = op.join(OUT_DIR,'counts/'+PREFIX+'{libname}.cvg.txt'),
-        byreadhapstatus = op.join(OUT_DIR,'counts/'+PREFIX+'{libname}.byreadstatus.txt'),
+        byreadhapstatus = op.join(OUT_DIR,'counts/'+PREFIX+'{libname}.byreadstatus.txt.gz'),
         tallylog = op.join(OUT_DIR,'counts/'+PREFIX+'{libname}.log'),
     params:
         ref_fasta = config['ref_fasta'],

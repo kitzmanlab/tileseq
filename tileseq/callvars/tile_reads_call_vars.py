@@ -438,19 +438,17 @@ def main():
         if len(tbl_result)>=100000:
             tbl_result = pd.DataFrame.from_dict( tbl_result )
 
-            tbl_result.to_csv(o.per_read_tbl, sep='\t', index=False, header=first_chunk, mode='w' if first_chunk else 'a' )
+            tbl_result.to_csv(o.per_read_tbl, sep='\t', index=False, header=first_chunk, mode='w' if first_chunk else 'a', compression='infer' )
 
             if first_chunk:
                 first_chunk=False
-
-
 
             tbl_result = []
 
 
     if len(tbl_result)>0:
         tbl_result = pd.DataFrame.from_dict( tbl_result )
-        tbl_result.to_csv(o.per_read_tbl, sep='\t', index=False, header=first_chunk, mode='w' if first_chunk else 'a' )
+        tbl_result.to_csv(o.per_read_tbl, sep='\t', index=False, header=first_chunk, mode='w' if first_chunk else 'a', compression='infer' )
 
 
 if __name__ == '__main__':                
