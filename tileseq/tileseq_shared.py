@@ -60,8 +60,10 @@ import Bio.SeqUtils
 mTransTbl = {}
 for x in 'ACGT': 
     for y in 'ACGT':
-        for z in 'ACGT':
-            mTransTbl['%s%s%s'%(x,y,z)] = Bio.Seq.Seq( '%s%s%s'%(x,y,z) ).translate().__str__()
+        for z in 'ACGTN':
+            aa = Bio.Seq.Seq( '%s%s%s'%(x,y,z) ).translate().__str__()
+            if aa!='X':
+                mTransTbl['%s%s%s'%(x,y,z)] = aa
 
 maa1to3 = {}
 for aa in 'ACDEFGHIKLMNPQRSTVWY*': maa1to3[aa] = Bio.SeqUtils.seq3(aa)

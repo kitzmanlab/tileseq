@@ -3,7 +3,7 @@ cimport numpy as np
 import numpy as np
 
 from pysam.libcfaidx cimport FastaFile
-from pysam.libcalignedsegment cimport AlignedSegment 
+from pysam.libcalignmentfile cimport AlignedSegment 
  
 # cython: c_string_type=str, c_string_encoding=ascii
 cdef class Variant:

@@ -207,7 +207,7 @@ rule mkplots:
         shell("""
             plot_mut_freq_by_pos --in_varcts {input.vartbl} --in_varcvg {input.cvgtbl} --desc "{params.libname}" --out {output.varbypos} --codon_range %d,%d
         """%(
-            codonrng_amp_pad[0], codonrng_amp_pad[1]
+            corng_orf[0], corng_orf[1]
         ))
 
         shell("""
