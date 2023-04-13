@@ -5,7 +5,7 @@ import numpy as np
 from pysam.libcfaidx cimport FastaFile
 from pysam.libcalignmentfile cimport AlignedSegment 
  
-# cython: c_string_type=str, c_string_encoding=ascii
+# cython: c_string_type=unicode, c_string_encoding=utf8
 cdef class Variant:
     
     cdef GappedAlign galign

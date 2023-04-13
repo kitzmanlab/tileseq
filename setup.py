@@ -22,7 +22,7 @@ setup(
 
 # ext_modules =  cythonize(Extension("frameaware_realign_core", ["tileseq/align/frameaware_realign_core.pyx"]), annotate=True),
 
-    ext_modules =  cythonize(["tileseq/callvars/varcall_common.pyx"]),
+    ext_modules =  cythonize(["tileseq/callvars/varcall_common.pyx"], language_level="3"),
 
     include_dirs = [numpy.get_include()]+pysam.get_include(),
     define_macros = pysam.get_defines(),
