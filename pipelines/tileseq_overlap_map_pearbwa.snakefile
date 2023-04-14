@@ -149,6 +149,7 @@ rule countinputs:
         fq_fwd = lambda wc: tblSamples.loc[ wc.libname ][ 'fastq_fwd' ],
     output:
         counts_input = op.join(OUT_DIR,'fastq/'+PREFIX+'{libname}.input.linects.txt')
+    log: op.join(OUT_DIR,'fastq/'+PREFIX+'{libname}.countinputs.log')
     threads: 8
     resources:
         mem_per_cpu="4gb", 
@@ -171,6 +172,7 @@ rule overlap:
         temp_unasm_fwd_fq=temp(op.join(OUT_DIR,'fastq/'+PREFIX+'{libname}.unassembled.forward.fastq')),
         temp_unasm_rev_fq=temp(op.join(OUT_DIR,'fastq/'+PREFIX+'{libname}.unassembled.reverse.fastq')),
         temp_disc_fq=temp(op.join(OUT_DIR,'fastq/'+PREFIX+'{libname}.discarded.fastq'))
+    log: op.join(OUT_DIR,'fastq/'+PREFIX+'{libname}.overlap.log')
     params:
         fq_overlap_base = op.join(OUT_DIR,'fastq/'+PREFIX+'{libname}')
     threads: 24
@@ -191,6 +193,7 @@ rule destuffer:
         counts_out = op.join(OUT_DIR,'fastq/'+PREFIX+'{libname}.destuff.log'),
         destuff_fq = temp(op.join(OUT_DIR,'fastq/'+PREFIX+'{libname}.destuff.fastq')),
     threads: 24
+    log: op.join(OUT_DIR,'fastq/'+PREFIX+'{libname}.destuffer.log')
     resources:
         mem_per_cpu="4gb", 
         cpus="24", 
@@ -211,6 +214,7 @@ rule trim_tilepris:
         trim_fq = op.join(OUT_DIR,'fastq/'+PREFIX+'{libname}.fq.gz'),
     params:
         libname=lambda wc: wc.libname
+    log: op.join(OUT_DIR,'fastq/'+PREFIX+'{libname}.trim_tilepris.log')
     threads: 24
     resources:
         mem_per_cpu="4gb", 
@@ -235,6 +239,7 @@ rule align:
     output:
         bam = temp(op.join(OUT_DIR,'align/unsorted/'+PREFIX+'{libname}.raw.bam')),
     threads: 24
+    log: op.join(OUT_DIR,'fastq/'+PREFIX+'{libname}.align.log')
     resources:
         mem_per_cpu="4gb", 
         cpus="24", 
@@ -259,6 +264,7 @@ rule align_filt:
         counts_out = op.join(OUT_DIR,'align/unsorted/'+PREFIX+'{libname}.bamfilt.counts.txt'),
     params:
         libname=lambda wc: wc.libname
+    log: op.join(OUT_DIR,'fastq/'+PREFIX+'{libname}.align_filt.log')
     resources:
         mem_per_cpu="4gb", 
         cpus="2", 
