@@ -167,8 +167,8 @@ def tileseq_hapstatus_report_plot(
             title='Variant/haplotype status '+exptDesc
         ).mark_bar(
         ).encode(
-            alt.X('libname',sort=list(tbl.index)),
-            alt.Y('readcount'),
+            alt.X('libname',sort=list(tbl.index), axis=alt.Axis(labelLimit=600)),
+            alt.Y('readcount',axis=alt.Axis(labelLimit=600)),
             alt.Color('status', scale=alt.Scale(scheme='category20') ),
             alt.Tooltip( ['libname','status','readcount'] ) 
         )

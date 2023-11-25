@@ -5,6 +5,7 @@ import pandas as pd
 import seaborn.objects as so
 import matplotlib.pyplot as plt
 import altair as alt
+from altair import datum
 from statsmodels.distributions.empirical_distribution import ECDF
 
 def plot_varfreq_wfall_allcodonposs_byed(
@@ -164,23 +165,41 @@ def cross_samp_cumul_haps(
             tbl_hc_long['hap_count'].append(n_haps_filtered)
            
     tbl_hc_long = pd.DataFrame(tbl_hc_long)
-    
+        
     ch=alt.Chart(
         tbl_hc_long,
-        title='Haplotype counts w/in cumul top % '+title,
+        title='Haplotype counts w/in cumul top %'+title,
         height=100
-    ).mark_bar(
+    )
+
+    ch1=ch.mark_bar(
     ).encode(
-        alt.X('libname',sort=list(tbl_hc_long['libname'])),
-        alt.Y('hap_count'),
-        alt.Color('hap_status', scale=alt.Scale(scheme='category20') ),
-        alt.Row('cumulthresh'),
-        alt.Tooltip( ['libname','hap_status','hap_count'] ) 
+        x=alt.X('libname',sort=list(tbl_hc_long['libname'])),
+        y=alt.Y('hap_count'),
+        color=alt.Color('hap_status', scale=alt.Scale(domain=['usable','filtered'], range=['lightgreen','lightgray']) ),
+        tooltip=alt.Tooltip( ['libname','hap_status','hap_count'] ) 
+    )
+
+    ch2=ch.mark_text(
+        angle=90,
+        align='right',
+    ).encode(
+        x=alt.X('libname',sort=list(tbl_hc_long['libname'])),
+        y=alt.value(100),
+        text=alt.Text('hap_count')
+    ) .transform_filter(
+        (datum.hap_status == 'usable')
+    )
+
+    chj = (ch1+ch2).facet(
+        row='cumulthresh'
+    ).resolve_scale(
+        y='independent'
     )
 
     tbl_out = tbl_hc_long.pivot( index='libname', columns=['cumulthresh','hap_status'], values=['hap_count'] )
 
-    return tbl_out, ch
+    return tbl_out, chj
 
 
 def plot_countofhaps_by_rdthresh_of_poss_vars(
@@ -213,6 +232,9 @@ def plot_countofhaps_by_rdthresh_of_poss_vars(
         _type_: _description_
     """
 
+    vtbl = vtbl.loc[
+        ~vtbl.codon_mut.str.contains('N')
+    ]
 
     vtbl_ontgt = vtbl.loc[
         vtbl.aa_num.between(aarng[0],aarng[1],inclusive=True)
@@ -235,6 +257,9 @@ def plot_countofhaps_by_rdthresh_of_poss_vars(
     for minrc in readcount_thresh:
         hcs = haptbl.query('counted_codonwise and total_counts>=%d'%(minrc)).groupby( ['aa_num','codon_mut'] )['hap'].agg(len)
         hcs = pd.DataFrame(  { 'Nhaps_at_thresh': hcs } )
+
+        if hcs.shape[0]==0: 
+            continue
     
         vtbl_ontgt_ed_cp = vtbl_ontgt_ed.copy()
         vtbl_ontgt_ed_cp['minrd_thresh']=minrc 
