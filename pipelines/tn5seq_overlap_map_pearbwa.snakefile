@@ -271,16 +271,16 @@ rule outtbl:
 
         # gather alignment stats
         align_stats_ovl = [ pd.read_csv(fn,index_col=0) for fn in input.counts_ovl_bam_filt ]
-        align_stats_ovl = pd.concat( align_stats_ovl, 1 ).transpose()
+        align_stats_ovl = pd.concat( align_stats_ovl, axis=1 ).transpose()
         align_stats_ovl.columns = [ cn+'_ovlreads' for cn in align_stats_ovl.columns ]
 
-        tbl_out = pd.concat( [tbl_out, align_stats_ovl], 1 )
+        tbl_out = pd.concat( [tbl_out, align_stats_ovl], axis=1 )
 
         align_stats_nonovl = [ pd.read_csv(fn,index_col=0) for fn in input.counts_nonovl_bam_filt ]
-        align_stats_nonovl = pd.concat( align_stats_nonovl, 1 ).transpose()
+        align_stats_nonovl = pd.concat( align_stats_nonovl, axis=1 ).transpose()
         align_stats_nonovl.columns = [ cn+'_nonovlreads' for cn in align_stats_nonovl.columns ]
         
-        tbl_out = pd.concat( [tbl_out, align_stats_nonovl], 1 )
+        tbl_out = pd.concat( [tbl_out, align_stats_nonovl], axis=1 )
 
         tbl_out.to_csv(output['table_out'],sep='\t',index=False)
         

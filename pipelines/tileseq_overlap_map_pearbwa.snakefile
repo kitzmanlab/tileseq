@@ -316,8 +316,8 @@ rule outtbl:
 
         # gather alignment stats
         align_stats = [ pd.read_csv(fn,index_col=0) for fn in input.counts_align ]
-        align_stats = pd.concat( align_stats, 1 ).transpose()
-        tbl_out = pd.concat( [tbl_out, align_stats], 1 )
+        align_stats = pd.concat( align_stats, axis=1 ).transpose()
+        tbl_out = pd.concat( [tbl_out, align_stats], axis=1 )
 
         #           'aligns_pass':n_pass,
         #   'aligns_fail_multiparts':n_filt_multiparts,

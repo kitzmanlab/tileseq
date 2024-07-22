@@ -220,9 +220,9 @@ rule outtbl:
         for i in range(len(hapstatus)):
             hapstatus[i]=hapstatus[i].set_index('hapstatus')
             hapstatus[i].columns = [ lLibs[i] ]
-        hapstatus = pd.concat(hapstatus,1)
+        hapstatus = pd.concat(hapstatus,axis=1)
 
-        tbl_out = pd.concat( [tbl_in, hapstatus.transpose()], 1 )       
+        tbl_out = pd.concat( [tbl_in, hapstatus.transpose()], axis=1 )       
 
         tbl_out['haptbl']=list(input.haptbl)
         tbl_out['vartbl']=list(input.vartbl)

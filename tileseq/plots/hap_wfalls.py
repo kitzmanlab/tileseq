@@ -237,7 +237,7 @@ def plot_countofhaps_by_rdthresh_of_poss_vars(
     ]
 
     vtbl_ontgt = vtbl.loc[
-        vtbl.aa_num.between(aarng[0],aarng[1],inclusive=True)
+        vtbl.aa_num.between(aarng[0],aarng[1],inclusive='both')
     ]
     
     vtbl_ontgt_ed = vtbl_ontgt.loc[

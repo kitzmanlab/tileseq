@@ -148,6 +148,9 @@ def main():
         wtcodon=m_codonnum_wtseq[codon_num]
         for ocodon in mTransTbl:
             if wtcodon==ocodon: continue
+            elif 'N' in ocodon: continue
+            elif 'N' in wtcodon:
+                raise ValueError(f'wt codon {codon_num} has N, but degenerate bases not allowed in reference')
             tbl_muts_templ['aa_num'].append(codon_num)
             tbl_muts_templ['codon_ref'].append(wtcodon)
             tbl_muts_templ['codon_mut'].append(ocodon)

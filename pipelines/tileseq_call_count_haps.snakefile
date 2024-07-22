@@ -119,6 +119,7 @@ rule callvars:
         ref_fasta = config['ref_fasta'],
         ref_seqname = config['ref_seqname'],
         orf_interval = config['orf_interval'],
+        stop_after_opt = f'--stop_after {config["stop_after"]}' if 'stop_after' in config else '',
         libname=lambda wc: wc.libname,
     threads: 1
     run:
@@ -135,6 +136,7 @@ rule callvars:
                 --tile_amplicon {params.ref_seqname}:%d-%d \
                 --tile_target {params.ref_seqname}:%d-%d  \
                 --per_read_tbl {output.perreadtbl} \
+                {params.stop_after_opt} \
                 --ends_fudge 10 \
                 --tile_min_min_bq %d --tile_min_mean_bq %d --var_min_min_bq %d --var_min_mean_bq %d
         """%(
@@ -240,9 +242,9 @@ rule outtbl:
         for i in range(len(hapstatus)):
             hapstatus[i]=hapstatus[i].set_index('hapstatus')
             hapstatus[i].columns = [ lLibs[i] ]
-        hapstatus = pd.concat(hapstatus,1)
+        hapstatus = pd.concat(hapstatus,axis=1)
 
-        tbl_out = pd.concat( [tbl_in, hapstatus.transpose()], 1 )       
+        tbl_out = pd.concat( [tbl_in, hapstatus.transpose()], axis=1 )       
 
         tbl_out['haptbl']=list(input.haptbl)
         tbl_out['vartbl']=list(input.vartbl)
