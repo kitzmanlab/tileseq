@@ -482,7 +482,7 @@ cdef class GappedAlign:
                         nbreaks += 1
 
 
-        # print('ref coord breaks: '+
+        #print('ref coord breaks: '+
         #      ','.join( ['%d:%d'%(i,coz_breaks[i]) for i in range(nbreaks)] ))
 
         cdef list lvars=[]
@@ -553,7 +553,7 @@ cdef class GappedAlign:
                 
                     gj+=1
 
-                # print('found variant gapped ofs range []':,gi_start_curvar,gi_end_curvar)
+                #print('found variant gapped ofs range []',gi_start_curvar,gi_end_curvar)
 
                 v = Variant( self, gi_start_curvar, gi_end_curvar )
 
@@ -566,6 +566,33 @@ cdef class GappedAlign:
 
         return lvars
         
+
+    
+    cpdef tuple gap_to_ungapped_interval( self, int read0ref1, int cozg_start, int cozg_end  ):
+
+        cpdef int coz_ung_start=-1
+        cpdef int coz_ung_cur=-1
+        cpdef int cozg
+
+        cpdef int[:] gali
+
+        if read0ref1==0:
+            gali = self.gali_ugofsRead
+        elif read0ref1==1:
+            gali = self.gali_ugofsRef
+
+        for cozg in range(cozg_start, cozg_end+1):
+            if coz_ung_start>=0: # we have encoutered start
+                if self.gali_nongapRdRefMatch[ cozg, read0ref1 ]:  #if==1
+                    # this current pos is ungapped in the seq we wnat
+                    coz_ung_cur = gali[ cozg ]
+                # else, do nothing
+            else: # have not started yet
+                if self.gali_nongapRdRefMatch[ cozg, read0ref1 ]:  #if==1
+                    coz_ung_start = coz_ung_cur = gali[ cozg ]
+
+        return (coz_ung_start,coz_ung_cur)
+
 
     # returns tuple
     # ( does alignment cover a given range, without having indels @ edges? 

@@ -236,14 +236,19 @@ def process_cdna_reads(
             out['sum_bp_ntv'] += var.n_mm_tv
 
 
-            # 2-2023 - TODO - BUGS IN THE HANDLING OF GAPS BELOW.  FOR NOW
-            # JUST SHORT CIRCUIT IT BY SETTING EVERYTHING W/ INS|DEL TO HAS INDEL AND NCODON INDEL FS
             if (var.n_ins>0) or (var.n_del>0):
                 out['has_indel']=True
-                out['n_codon_indel_frameshift'] += 1
 
             if ed_cur != 0:
                 out['is_wt']=False
+
+            
+            # skip if entirely outside cds
+            if ((var.coz_ref_end < orf_interval[1]) or (var.coz_ref_start > orf_interval[2])):
+                out['uncounted_vars'] = True
+                out['vars_class'].append('offEdge')
+                out['vars_ned'].append(0)
+                continue
 
             # find codon # containing vairant
             icodon = int( (var.coz_ref_start - orf_interval[1])/3 )
@@ -264,15 +269,19 @@ def process_cdna_reads(
 
             gofs_codon = gal.ref_to_gapped_interval( coz_codon[0], coz_codon[1] )
 
-            ugofs_ref_codon = (gal.gali_ugofsRef[ gofs_codon[1] ], 
-                               gal.gali_ugofsRef[ gofs_codon[2] ])
+            ugofs_ref_codon = gal.gap_to_ungapped_interval( 1, gofs_codon[1], gofs_codon[2] ) 
+            ugofs_query_codon = gal.gap_to_ungapped_interval( 0, gofs_codon[1], gofs_codon[2] ) 
 
-            ugofs_query_codon = (gal.gali_ugofsRead[ gofs_codon[1] ], 
-                               gal.gali_ugofsRead[ gofs_codon[2] ])
+            if ugofs_ref_codon[0] != -1:
+                seq_ref_codon = gal.ref_seq[ ugofs_ref_codon[0]:ugofs_ref_codon[1]+1 ].upper()
+            else:
+                seq_ref_codon = ''
 
-            seq_ref_codon = gal.ref_seq[ ugofs_ref_codon[0]:ugofs_ref_codon[1]+1 ].upper()
-            seq_query_codon = gal.query_seq[ ugofs_query_codon[0]:ugofs_query_codon[1]+1 ].upper()
-
+            if ugofs_query_codon[0] != -1:
+                seq_query_codon = gal.query_seq[ ugofs_query_codon[0]:ugofs_query_codon[1]+1 ].upper()
+            else:
+                seq_query_codon = ''
+            
             if len(seq_ref_codon)!=len(seq_query_codon):
                 out['has_indel']=True
 
@@ -384,7 +393,12 @@ def main():
     opts.add_argument('--var_min_mean_bq', default=25, type=int, dest='var_min_mean_bq')
     opts.add_argument('--var_min_min_bq', default=25, type=int, dest='var_min_min_bq')
 
+    opts.add_argument('--stop_after', default=int(1e10), type=int, dest='stop_after',
+        help='stop after reaching this number of reads (assumes bam file is unsorted)')
+
     o = opts.parse_args()
+
+    stop_after = o.stop_after
 
     target_chrom = o.orf_interval[0]
 
@@ -434,6 +448,9 @@ def main():
         if (Nskipped+Nprocessed)%10000 == 0:
             sys.stderr.write('%d (%d skipped)... '%(Nprocessed+Nskipped, Nskipped))
             sys.stderr.flush()
+
+        if (Nskipped+Nprocessed) >= stop_after:
+            break
 
         if len(tbl_result)>=100000:
             tbl_result = pd.DataFrame.from_dict( tbl_result )
