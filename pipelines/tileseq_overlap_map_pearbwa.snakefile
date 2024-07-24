@@ -38,6 +38,8 @@
 #   bwa_options - options to pass to bwa (surrounded by quotes); by default :  "-A2 -E1 -L50,50 -B2"
 #
 #   max_indel_len - max size of indels to pass thru into final bam
+#
+#   stop_after_nreads - for debugging purposes, stop after this number of reads per library
 
 #######################################################
 # For example, to run:
@@ -156,9 +158,16 @@ rule countinputs:
         cpus="8", 
         time="0:30:00"
     run:
-        shell("""
-            pigz -d -c -p8 {input.fq_fwd} | wc -l > {output.counts_input}
-        """)
+        if 'stop_after_nreads' in config:
+            nlines = 4 * int(config['stop_after_nreads'])
+            shell("""
+                set +o pipefail;  #fun fact, when head breaks the pipe is returns nonzero exit code
+                pigz -d -c -p8 {input.fq_fwd} | head -n {nlines} | wc -l > {output.counts_input}
+            """)
+        else:
+            shell("""
+                pigz -d -c -p8 {input.fq_fwd} | wc -l > {output.counts_input}
+            """)
 
 rule overlap:
     # merge overlapping read pairs
@@ -168,6 +177,9 @@ rule overlap:
     output:
         counts_out = op.join(OUT_DIR,'fastq/'+PREFIX+'{libname}.overlapped.linects.txt'),
         temp_asm_fq=temp(op.join(OUT_DIR,'fastq/'+PREFIX+'{libname}.assembled.fastq')),
+
+        temp_head_fwd_fq=temp(op.join(OUT_DIR,'fastq/'+PREFIX+'{libname}.temp.forward.fastq')),
+        temp_head_rev_fq=temp(op.join(OUT_DIR,'fastq/'+PREFIX+'{libname}.temp.reverse.fastq')),
 
         temp_unasm_fwd_fq=temp(op.join(OUT_DIR,'fastq/'+PREFIX+'{libname}.unassembled.forward.fastq')),
         temp_unasm_rev_fq=temp(op.join(OUT_DIR,'fastq/'+PREFIX+'{libname}.unassembled.reverse.fastq')),
@@ -181,10 +193,21 @@ rule overlap:
         cpus="24", 
         time="1:00:00"
     run:
-        shell("""   
-            pear -j{threads} --forward-fastq {input.fq_fwd} --reverse-fastq {input.fq_rev} {PEAR_OPTIONS} -o {params.fq_overlap_base}
-            wc -l {params.fq_overlap_base}.assembled.fastq > {output.counts_out}
-        """)
+        if 'stop_after_nreads' in config:
+            nlines = 4 * int(config['stop_after_nreads'])
+            shell("""   
+                set +o pipefail;  #fun fact, when head breaks the pipe is returns nonzero exit code
+                pigz -d -c -p8 {input.fq_fwd} | head -n {nlines} > {output.temp_head_fwd_fq}
+                pigz -d -c -p8 {input.fq_rev} | head -n {nlines} > {output.temp_head_rev_fq}
+                pear -j{threads} --forward-fastq {output.temp_head_fwd_fq} --reverse-fastq {output.temp_head_rev_fq} {PEAR_OPTIONS} -o {params.fq_overlap_base}
+                wc -l {params.fq_overlap_base}.assembled.fastq > {output.counts_out}
+            """)
+        else:
+            shell("""   
+                touch {output.temp_head_fwd_fq} {output.temp_head_rev_fq}
+                pear -j{threads} --forward-fastq {input.fq_fwd} --reverse-fastq {input.fq_rev} {PEAR_OPTIONS} -o {params.fq_overlap_base}
+                wc -l {params.fq_overlap_base}.assembled.fastq > {output.counts_out}
+            """)
 
 rule destuffer:
     input:
