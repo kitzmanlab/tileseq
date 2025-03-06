@@ -568,13 +568,14 @@ cdef class GappedAlign:
         
 
     
-    cpdef tuple gap_to_ungapped_interval( self, int read0ref1, int cozg_start, int cozg_end  ):
+    #cpdef tuple gap_to_ungapped_interval( self, int read0ref1, int cozg_start, int cozg_end  ):
+    def gap_to_ungapped_interval( self, int read0ref1, int cozg_start, int cozg_end  ):
 
-        cpdef int coz_ung_start=-1
-        cpdef int coz_ung_cur=-1
-        cpdef int cozg
+        cdef int coz_ung_start=-1
+        cdef int coz_ung_cur=-1
+        cdef int cozg
 
-        cpdef int[:] gali
+        cdef int[:] gali
 
         if read0ref1==0:
             gali = self.gali_ugofsRead
