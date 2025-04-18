@@ -71,7 +71,7 @@ def main():
 
     opts.add_argument('--out_byread_status_tbl', required=True, dest='out_byread_status_tbl')
 
-    opts.add_argument('--multi_syn_resolve', default='dontcount', choices=['dontcount','random','first'], dest='multi_syn_resolve', help='when there are multiple syn variants, and only syn variants, how to resolve')
+    opts.add_argument('--multi_syn_resolve', default='dontcount', choices=['dontcount','random','first','split'], dest='multi_syn_resolve', help='when there are multiple syn variants, and only syn variants, how to resolve')
 
 
     # opts.add_argument('--tile_amplicon', required=True,  type=chrStartStopArg_11incl_to_00incl, dest='tile_amplicon',
@@ -166,8 +166,8 @@ def main():
     tbl_muts_templ2 = pd.DataFrame(tbl_muts_templ).set_index( ['aa_num','codon_ref','codon_mut'] )
 
     # (codon_num,wt_codon,mut_codon)->count
-    cts_singlemut = defaultdict(int)
-    cts_singlemut_plussyn = defaultdict(int)
+    cts_singlemut = defaultdict(float)
+    cts_singlemut_plussyn = defaultdict(float)
 
     reader = pd.read_table(o.per_read_tbl, chunksize=10000, compression='infer')
 
@@ -370,6 +370,11 @@ def main():
                     scv = splitvar(lcurvar[isyn])
                     scv = (1+int((scv[0]-1)/3),scv[1],scv[2])
                     cts_singlemut_plussyn[ scv ] += 1
+                elif o.multi_syn_resolve == 'split':
+                    for cv in lcurvar:
+                        scv = splitvar(cv)
+                        scv = (1+int((scv[0]-1)/3),scv[1],scv[2])
+                        cts_singlemut_plussyn[ scv ] += 1./len(lcurvar)
                 elif o.multi_syn_resolve == 'first':
                     isyn = 0
                     scv = splitvar(lcurvar[isyn])
@@ -430,8 +435,8 @@ def main():
 
     tbl_haps_out.to_csv( o.out_hap_tbl, sep='\t', index=False )
 
-    cts_singlemut = pd.Series( cts_singlemut )
-    cts_singlemut_plussyn = pd.Series( cts_singlemut_plussyn )
+    cts_singlemut = pd.Series( cts_singlemut ).astype(int)
+    cts_singlemut_plussyn = pd.Series( cts_singlemut_plussyn ).astype(int)
 
     bycodon_tbl = pd.DataFrame( tbl_muts_templ ).set_index( ['aa_num','codon_ref','codon_mut'] )
     bycodon_tbl['singlemut_reads'] = cts_singlemut

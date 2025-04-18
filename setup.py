@@ -37,7 +37,9 @@ setup(
                              'qc_summary_plots = tileseq.plots.qc_summary_plots:main',
                              'plot_mut_freq_by_pos = tileseq.plots.plot_mut_freq_by_pos:main',
                              'hap_wfalls = tileseq.plots.hap_wfalls:main',
-                             'cross_sample_hap_overlap_plots = tileseq.plots.cross_samp_hap_overlap_plots:main'
+                             'cross_sample_hap_overlap_plots = tileseq.plots.cross_samp_hap_overlap_plots:main',
+
+                             'selection_qc_plots = tileseq.quickqc.selection_qc_plots:main',
                            ]
     }
 )
