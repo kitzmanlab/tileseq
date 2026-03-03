@@ -141,6 +141,11 @@ def tileseq_hapstatus_report_plot(
         'summary_skip_readfail summary_wt summary_indelfs summary_indelnonfs_only summary_syn_only summary_stopgain summary_singlemis_only summary_singlemis_inclsyn summary_multimis_only summary_multimis_inclsyn summary_other'.split(' ')
     ]
 
+    tbl3=tbl[
+        ['libname']+
+        'num_aligns_processed num_aligns_skipped'.split(' ')
+    ]
+
     if rescale_to_pct:
         tbl2pcts=tbl2.set_index('libname')
         for i,r in tbl2pcts.iterrows():
@@ -150,7 +155,7 @@ def tileseq_hapstatus_report_plot(
 
         ch=alt.Chart(
             tbl2L,
-            title='Variant/haplotype status '+exptDesc
+            title='Among processed alignments, Variant/haplotype status '+exptDesc
         ).mark_bar(
         ).encode(
             alt.X('libname',sort=list(tbl.index)),
@@ -159,12 +164,29 @@ def tileseq_hapstatus_report_plot(
             alt.Tooltip( ['libname','status','readcount'] ) 
         )       
 
+        tbl3pcts=tbl3.set_index('libname')
+        for i,r in tbl3pcts.iterrows():
+            tbl3pcts.loc[i] = tbl3pcts.loc[i]/tbl3pcts.loc[i].sum()
+        tbl3pcts=tbl3pcts.reset_index()
+        tbl3L=tbl3pcts.melt(id_vars='libname',var_name='status',value_name='readcount')
+    
+        ch_num_aligns_processed = alt.Chart(
+            tbl3L   ,
+            title='Number of alignments processed '+exptDesc
+        ).mark_bar(
+        ).encode(
+            alt.X('libname',sort=list(tbl.index)),
+            alt.Y('readcount',axis=alt.Axis(format='.0%')),
+            alt.Color('status', scale=alt.Scale(scheme='category20') ),
+            alt.Tooltip( ['libname','status','readcount'] ) 
+        )
+
     else:
         tbl2L=tbl2.melt(id_vars='libname',var_name='status',value_name='readcount')
 
         ch=alt.Chart(
             tbl2L,
-            title='Variant/haplotype status '+exptDesc
+            title='Among processed alignments, Variant/haplotype status '+exptDesc
         ).mark_bar(
         ).encode(
             alt.X('libname',sort=list(tbl.index), axis=alt.Axis(labelLimit=600)),
@@ -172,8 +194,21 @@ def tileseq_hapstatus_report_plot(
             alt.Color('status', scale=alt.Scale(scheme='category20') ),
             alt.Tooltip( ['libname','status','readcount'] ) 
         )
+
+        tbl3L=tbl3.melt(id_vars='libname',var_name='status',value_name='readcount')
     
-    return ch
+        ch_num_aligns_processed = alt.Chart(
+            tbl3L   ,
+            title='Number of alignments processed '+exptDesc
+        ).mark_bar(
+        ).encode(
+            alt.X('libname',sort=list(tbl.index)),
+            alt.Y('readcount'),
+            alt.Color('status', scale=alt.Scale(scheme='category20') ),
+            alt.Tooltip( ['libname','status','readcount'] ) 
+        )
+
+    return (ch_num_aligns_processed & ch).resolve_scale(color='independent')
 
 
 def main():

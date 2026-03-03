@@ -396,6 +396,8 @@ def main():
     opts.add_argument('--stop_after', default=int(1e10), type=int, dest='stop_after',
         help='stop after reaching this number of reads (assumes bam file is unsorted)')
 
+    opts.add_argument('--out_read_counts', required=True, dest='out_read_counts')
+
     o = opts.parse_args()
 
     stop_after = o.stop_after
@@ -467,6 +469,8 @@ def main():
         tbl_result = pd.DataFrame.from_dict( tbl_result )
         tbl_result.to_csv(o.per_read_tbl, sep='\t', index=False, header=first_chunk, mode='w' if first_chunk else 'a', compression='infer' )
 
+    rdcounts = {'num_aligns_processed':Nprocessed, 'num_aligns_skipped':Nskipped}
+    pd.Series(rdcounts).to_csv(o.out_read_counts, sep='\t', index=True)
 
 if __name__ == '__main__':                
     main()

@@ -1,3 +1,4 @@
+from math import e
 import sys
 import argparse
 
@@ -63,6 +64,8 @@ def main():
     opts.add_argument('--orf_strand', default='+', dest='orf_strand',
         help='ORF strand, should be + or -' )
 
+    opts.add_argument('--hap_blocklist', required=False, dest='hap_blocklist')
+
     opts.add_argument('--out_count_tbl', required=True, dest='out_count_tbl')
 
     opts.add_argument('--out_cvg_tbl', required=True, dest='out_cvg_tbl')
@@ -73,6 +76,7 @@ def main():
 
     opts.add_argument('--multi_syn_resolve', default='dontcount', choices=['dontcount','random','first','split'], dest='multi_syn_resolve', help='when there are multiple syn variants, and only syn variants, how to resolve')
 
+    opts.add_argument('--min_cpm_perhap',default=10, type=float, dest='min_cpm_perhap', help='minimum cpm per haplotype to be counted as passing the threshold - note that any below-threshold haplotypes counts will still be accumulated')
 
     # opts.add_argument('--tile_amplicon', required=True,  type=chrStartStopArg_11incl_to_00incl, dest='tile_amplicon',
     #     help='interval for teh amplicon itself, including constant primer regions, 1-based, inclusive')
@@ -128,8 +132,7 @@ def main():
     summary_multimis_only=0
     summary_multimis_inclsyn=0
     summary_other=0
-
-    #summary_total_counted=0
+    summary_blocked_haplist=0
     summary_skip_readfail=0
 
     lcolout_mutstbl = ['aa_num','codon_ref','codon_mut','cdna_coord','aa_ref','aa_mut','class','ed_dist']
@@ -143,6 +146,12 @@ def main():
 
     tbl_muts_templ = { k:[] for k in 
         lcolout_mutstbl }
+
+    if o.hap_blocklist is not None:
+        tbl_hap_blocklist = pd.read_table(o.hap_blocklist)
+        tbl_hap_blocklist = tbl_hap_blocklist.set_index('hap')
+    else:
+        tbl_hap_blocklist = None
 
     for codon_num in sorted(m_codonnum_wtseq.keys()):
         wtcodon=m_codonnum_wtseq[codon_num]
@@ -176,16 +185,17 @@ def main():
     ctr=0
     for chunk in reader:
 
-        #keep track of indices to add to each table.
-        lacc_smtbl=[]
-        lacc_as_smtbl=[]
-
         tbl_out_byreadstatus = { k:[] for k in  hdr_out_byreadstatus  }
 
         for _,l in chunk.iterrows():
             ctr+=1
 
-            count_in_tally=False
+            hapid = l['vars_vcf_style']
+
+            if tbl_hap_blocklist is not None:
+                if hapid in tbl_hap_blocklist.index:
+                    summary_blocked_haplist += 1
+                    continue
 
             tbl_out_byreadstatus['readname'].append(l['readname'])
 
@@ -203,8 +213,6 @@ def main():
                 icstart=int(l['codon_start'])
                 icend=int(l['codon_end'])
                 codnumz_to_cvg[ icstart-1:icend ] += 1
-
-            hapid = l['vars_vcf_style']
 
             if l['is_wt']:
                 summary_wt+=1
@@ -438,12 +446,27 @@ def main():
     cts_singlemut = pd.Series( cts_singlemut ).astype(int)
     cts_singlemut_plussyn = pd.Series( cts_singlemut_plussyn ).astype(int)
 
+    total_cts = tbl_haps_out.query('counted_codonwise==True')['total_counts'].sum()
+    if total_cts>0:    
+        tbl_haps_out['cpm'] = 1e6 * tbl_haps_out['total_counts'] / total_cts
+    else:
+        tbl_haps_out['cpm'] = 0
+
+    nhaps_abv_cpm = tbl_haps_out.query('counted_codonwise==True').groupby( ['aa_num','codon_ref','codon_mut'] )['cpm'].agg( lambda x : (x>=o.min_cpm_perhap).sum() )
+    nhaps_total = tbl_haps_out.query('counted_codonwise==True').groupby( ['aa_num','codon_ref','codon_mut'] )['cpm'].agg( 'count' )
+
     bycodon_tbl = pd.DataFrame( tbl_muts_templ ).set_index( ['aa_num','codon_ref','codon_mut'] )
     bycodon_tbl['singlemut_reads'] = cts_singlemut
     bycodon_tbl['singlemut_reads'] = bycodon_tbl['singlemut_reads'].fillna(0).astype(int)
     bycodon_tbl['singlemut_allowsyn_reads'] = cts_singlemut_plussyn
     bycodon_tbl['singlemut_allowsyn_reads'] = bycodon_tbl['singlemut_allowsyn_reads'].fillna(0).astype(int)
 
+    bycodon_tbl['nhaps_total'] = nhaps_total
+    bycodon_tbl['nhaps_total'] = bycodon_tbl['nhaps_total'].fillna(0).astype(int)
+    bycodon_tbl['nhap_abv_cpm'] = nhaps_abv_cpm
+    bycodon_tbl['nhap_abv_cpm'] = bycodon_tbl['nhap_abv_cpm'].fillna(0).astype(int)
+    bycodon_tbl['thresh_cpm'] = o.min_cpm_perhap
+    
     cvg_tbl=pd.DataFrame(
         { 'codon_num':np.arange(1,Ncodons+1),
           'total_pass_reads': codnumz_to_cvg }  )
@@ -467,6 +490,8 @@ def main():
     print('summary_multimis_only',summary_multimis_only)
     print('summary_multimis_inclsyn',summary_multimis_inclsyn)
     print('summary_other',summary_other)
+    print('summary_blocked_haplist',summary_blocked_haplist)
+
 
 if __name__ == '__main__':                
     main()

@@ -33,6 +33,8 @@
 #
 #   cutadapt_trimpri_opts - options passed to cutadapt for constant flanking tileseq primer trimming
 #
+#   allow_seq_flanking_primers - set to True to allow for sequence before or after the trimmed primers, e.g., randomized sequence added for AVITI runs
+#
 #   bwa_ref - path to bwa reference - if not listen then it is assumed that ref_fasta points to a bwa-indexed fasta file 
 #
 #   bwa_options - options to pass to bwa (surrounded by quotes); by default :  "-A2 -E1 -L50,50 -B2"
@@ -86,6 +88,8 @@ CUTADAPT_TRIMPRI_OPTS = config['cutadapt_trimpri_opts'] if 'cutadapt_trimpri_opt
 
 STUFFERS = ['GGAGACGCTCAGTACGTCTAAAGCGGCCGCacgtagtgaCCTGCAGGTTTAATGCACGTAGTCGTCTCC',
             'ctta GCAGGTG CTCAGTACGTC ac GCGGCCGC acgtagtga CCTGCAGG at ATGCACGTAGT CACCTGC gcga'.lower().replace(' ','')]
+
+ALLOW_SEQ_FLANKING_PRIMERS = config['allow_seq_flanking_primers'] if 'allow_seq_flanking_primers' in config else False
 
 ########
 # load and check sample table.
@@ -249,7 +253,10 @@ rule trim_tilepris:
         # seqtrim_right_rc = str(Bio.Seq.Seq(seqtrim_right).reverse_complement())
         # don't reverse complement since we are on merged reads
 
-        trimarg = '-a "^%s...%s"'%( seqtrim_left, seqtrim_right )
+        if ALLOW_SEQ_FLANKING_PRIMERS:
+            trimarg = '-a "%s...%s"'%( seqtrim_left, seqtrim_right )
+        else:
+            trimarg = '-a "^%s...%s$"'%( seqtrim_left, seqtrim_right )
             
         shell("""
             cutadapt %s %s --discard-untrimmed -j {threads} -o {output.trim_fq} {input.fq} > {output.counts_out}

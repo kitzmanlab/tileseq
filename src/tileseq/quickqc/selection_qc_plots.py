@@ -7,6 +7,8 @@ import argparse
 import seaborn as sns
 import altair as alt
 
+from tileseq.plots.cross_samp_hap_overlap_plots import join_haptbl_2samp
+
 
 def varagg_ntscore_2samp(
     vtbl_sel,
@@ -63,7 +65,7 @@ def varagg_ntscore_2samp(
     vj['cpm_sel'] = 1e6 * vj['cts_sel']/vj['cts_sel'].sum()
     vj['cpm_base'] = 1e6 * vj['cts_base']/vj['cts_base'].sum()    
         
-    vj['ntscore'] = np.log2( vj['cpm_base'] / vj['cpm_base'] )
+    vj['ntscore'] = np.log2( vj['cpm_sel'] / vj['cpm_base'] )
         
     return vj
 
@@ -228,6 +230,119 @@ def mis_non_syn_plots(
     return f
 
 
+def plot_aasc_hmap_link_to_splot_haps(
+    sctbl,
+    haptbl,
+    title,
+    sn1,
+    sn2,
+    colplot='aascore',
+    log2rng=[-5,5],
+    dispinnerbrks=[-0.5,0.5],
+    aasort=list('AVLIMFYWRHKDESTNQGCP*'),
+    height=250,
+    width=None
+):        
+    """ plot an aa LOF score heatmap and link to an interactive scatterplot showing cpms of constituent haplotypes for each aa mutation
+
+    Args:
+        sctbl (_type_): _description_
+        haptbl (_type_): _description_
+        title (_type_): _description_
+        sn1 (_type_): _description_
+        sn2 (_type_): _description_
+        colplot (str, optional): _description_. Defaults to 'aascore'.
+        log2rng (list, optional): _description_. Defaults to [-5,5].
+        dispinnerbrks (list, optional): _description_. Defaults to [-0.5,0.5].
+        aasort (_type_, optional): _description_. Defaults to list('AVLIMFYWRHKDESTNQGCP*').
+        height (int, optional): _description_. Defaults to 250.
+        width (_type_, optional): _description_. Defaults to None.
+
+    Returns:
+        _type_: _description_
+    """
+    sctbl = sctbl.copy()
+    
+    sctbl[colplot]=sctbl[colplot].clip( log2rng[0], log2rng[1] )
+    
+    if width==None:
+        aarng=(sctbl.aa_num.min(),sctbl.aa_num.max())
+        width=int(1000 * ((aarng[1]-aarng[0])/100))
+                
+    lcol=list(sctbl.columns)
+    pl2r=alt.Chart(
+        sctbl,
+        height=height,
+        width=width,
+        title=title,
+    ).mark_rect(
+    ).encode(
+        alt.X('aa_num:O'),
+        alt.Y('aa_mut:O',sort=aasort),
+        alt.Color('%s:Q'%colplot, scale=alt.Scale( 
+            clamp=True, 
+            domain=[log2rng[0]]+dispinnerbrks+[log2rng[-1]], 
+            range=['blue','white','white','darkred'],
+            interpolate='hsl')),
+        alt.Tooltip(lcol)
+    )    
+    
+    selr = alt.selection_point( fields=['aa_mut','aa_num'] )
+    pl2r = pl2r.add_params( selr )
+
+    cpmLim=(0.1,10000)
+    
+    line = pd.DataFrame({
+        'cpm_1': cpmLim,
+        'cpm_2': cpmLim,
+    })    
+
+   
+    scplot = alt.Chart(
+        haptbl,
+        title=f'{sn1} vs {sn2}'
+    ).transform_filter(
+        selr
+    ).mark_circle(
+    ).encode(
+        alt.X('cpm_2',scale=alt.Scale( type='log', domain=cpmLim,clamp=True)),
+        alt.Y('cpm_1',scale=alt.Scale( type='log', domain=cpmLim, clamp=True)),
+        alt.Color('codon_mut'),
+        tooltip=['hap','status','aa_num','aa_ref','codon_ref','aa_mut','codon_mut','aa_ref','cpm_1','cpm_2']
+    )
+      
+    scoverlay = alt.Chart(line).mark_line(color= 'black').encode(
+        x='cpm_1',
+        y='cpm_2',
+    )
+      
+    
+    vhist = alt.Chart(
+        sctbl,
+        height=50
+    ).mark_bar(
+    ).encode(
+        alt.X('%s:Q'%colplot,bin=alt.Bin(extent=[log2rng[0],log2rng[1]],maxbins=40)), #,bin=alt.Bin(extent=[-4, 4], step=0.5)),
+        alt.Y('count()', axis=alt.Axis(title=None)),
+        alt.Row('varclass'),
+        alt.Color('nv:O', scale=alt.Scale(scheme='set2')),
+    ).resolve_scale(
+        y='independent',
+
+    )
+       
+    p = (
+        pl2r &
+        (( scplot+scoverlay ) | vhist ).resolve_scale(color='independent')
+    ).resolve_scale(
+        color='independent'
+    )
+    
+    return p
+
+
+
+
 def plot_aasc_hmap_link_to_splot_indiv_vars(
     sctbl,
     ntsctbl,
@@ -378,8 +493,11 @@ def main():
     opts.add_argument('--pcount', type=float, default=0.1, dest='pcount') 
     opts.add_argument('--min_base_cpm', type=float, default=50., dest='min_base_cpm') 
 
-    opts.add_argument('--aasc_clip_range', default='-4,4', dest='aasc_clip_range') 
+    opts.add_argument('--aasc_clip_range', default='-4,4', type=str, dest='aasc_clip_range') 
+    opts.add_argument('--disp_inner_breaks', default='-0.5,0.5', type=str, dest='disp_inner_breaks') 
     opts.add_argument('--cols_counts_include',default='singlemut_reads,singlemut_allowsyn_reads',dest='cols_counts_include')
+
+    opts.add_argument('--include_hap_counts', default=False, action='store_true', dest='include_hap_counts')
 
     o = opts.parse_args()
 
@@ -389,6 +507,9 @@ def main():
     aasc_clip_range = ( float(o.aasc_clip_range.split(',')[0]), 
                        float(o.aasc_clip_range.split(',')[1]) )
     
+    disp_inner_breaks = [float(o.disp_inner_breaks.split(',')[0]), 
+                       float(o.disp_inner_breaks.split(',')[1])] 
+
     cols_counts_include = o.cols_counts_include.split(',')
     
     tbl_varcall_rpt = tbl_varcall_rpt.set_index('libname')
@@ -401,9 +522,15 @@ def main():
 
         samprow_base = tbl_varcall_rpt.loc[ reprow['libname_base'] ]
         samprow_sel = tbl_varcall_rpt.loc[ reprow['libname_sel'] ]
-
+        
         vartbl_base = pd.read_table(o.varcall_path_prefix + '/' +samprow_base['vartbl'])
         vartbl_sel = pd.read_table(o.varcall_path_prefix + '/' +samprow_sel['vartbl'])
+
+        if o.include_hap_counts:
+            haptbl_base = pd.read_table(o.varcall_path_prefix + '/' +samprow_base['haptbl'])
+            haptbl_sel = pd.read_table(o.varcall_path_prefix + '/' +samprow_sel['haptbl'])
+
+            haptbl_join = join_haptbl_2samp( haptbl_sel, haptbl_base, o.aarange, o.pcount )
 
         ntsc_sel_base = varagg_ntscore_2samp(
             vartbl_sel,
@@ -438,22 +565,37 @@ def main():
         fig_score_dists.savefig(fnout_dist_plot)
        
 
-        fig_heatmap = plot_aasc_hmap_link_to_splot_indiv_vars(
-            aasc_sel_base,
-            ntsc_sel_base,
-            f"{pairname} : {reprow['libname_sel']} / {reprow['libname_base']} ",
-            reprow['libname_sel'],
-            reprow['libname_base'],
-            colcpm_num='cpm_sel',
-            colcpm_denom='cpm_base',
-            colntscore='ntscore',
-            colplot='aascore',
-            log2rng=aasc_clip_range,
-            dispinnerbrks=[-0.5,0.5],
-            aasort=list('AVLIMFYWRHKDESTNQGCP*'),
-            height=250,
-            width=None
-        )
+        if not o.include_hap_counts:
+            fig_heatmap = plot_aasc_hmap_link_to_splot_indiv_vars(
+                aasc_sel_base,
+                ntsc_sel_base,
+                f"{pairname} : {reprow['libname_sel']} / {reprow['libname_base']} ",
+                reprow['libname_sel'],
+                reprow['libname_base'],
+                colcpm_num='cpm_sel',
+                colcpm_denom='cpm_base',
+                colntscore='ntscore',
+                colplot='aascore',
+                log2rng=aasc_clip_range,
+                dispinnerbrks=disp_inner_breaks,
+                aasort=list('AVLIMFYWRHKDESTNQGCP*'),
+                height=250,
+                width=None
+            )
+        else:
+            fig_heatmap = plot_aasc_hmap_link_to_splot_haps(
+                aasc_sel_base,
+                haptbl_join,
+                f"{pairname} : {reprow['libname_sel']} / {reprow['libname_base']} ",
+                reprow['libname_sel'],
+                reprow['libname_base'],
+                colplot='aascore',
+                log2rng=aasc_clip_range,
+                dispinnerbrks=disp_inner_breaks,
+                aasort=list('AVLIMFYWRHKDESTNQGCP*'),
+                height=250,
+                width=None
+            )
 
         fnout_heatmap = o.out_base + f'{pairname}.heatmap.html'
         fig_heatmap.save(fnout_heatmap)

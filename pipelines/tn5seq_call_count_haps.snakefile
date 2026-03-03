@@ -154,7 +154,7 @@ rule tallyvars:
                 --ref_fasta {params.ref_fasta} \
                 --per_read_tbl {input.perreadtbl} \
                 --orf_interval {params.ref_seqname}:{params.orf_interval} \
-                --multi_syn_resolve random \
+                --multi_syn_resolve split \
                 --out_hap_tbl {output.haptbl} \
                 --out_cvg_tbl {output.cvgtbl} \
                 --out_byread_status_tbl {output.byreadhapstatus} \

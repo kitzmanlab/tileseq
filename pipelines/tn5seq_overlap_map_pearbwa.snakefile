@@ -60,7 +60,7 @@ MAX_INDEL_LEN = int(config['max_indel_len']) if 'max_indel_len' in config else 1
 
 PREFIX = config['prefix'] if 'prefix' in config  else ''
 OUT_DIR = config['outdir']
-NGMERGE_OPTIONS = config['ngmerge_options'] if 'ngmerge_options' in config else '-m 20 -d '
+NGMERGE_OPTIONS = config['ngmerge_options'] if 'ngmerge_options' in config else '-m 20 -d -u 60'
 
 DOWNSAMP_PAIRS = int(config['downsamp_pairs']) if 'downsamp_pairs' in config else 200000
 
@@ -105,7 +105,8 @@ rule trimadaptors:
         fq_rev_trim = temp(op.join(OUT_DIR,'fastq/'+PREFIX+'{libname}.trim.rev.fq')),
         trim_log = op.join(OUT_DIR,'fastq/'+PREFIX+'{libname}.destuff.log'),
     resources:
-        mem_per_cpu="4gb", 
+        mem="48gb",
+        mem_mb_per_cpu="2gb", 
         cpus="24", 
         time="1:00:00"
     threads: 24
@@ -130,7 +131,8 @@ rule overlap:
         temp_unasm_base=temp(op.join(OUT_DIR,'fastq/'+PREFIX+'{libname}.unassembled')),
     threads: 24
     resources:
-        mem_per_cpu="4gb", 
+        mem="48gb",
+        mem_mb_per_cpu="4gb", 
         cpus="24", 
         time="1:00:00"
     run:
@@ -155,7 +157,8 @@ rule align:
         options = BWA_REF + " " + BWA_OPTIONS
     threads: 24
     resources:
-        mem_per_cpu="4gb", 
+        mem="48gb",
+        mem_mb_per_cpu="4gb", 
         cpus="24", 
         time="1:00:00"
     run:
@@ -174,7 +177,7 @@ rule align_filt_ovl:
         libname=lambda wc: wc.libname
     threads: 1
     resources:
-        mem_per_cpu="4gb", 
+        mem_mb_per_cpu="4gb", 
         cpus="1", 
         time="1:00:00"
     run:
@@ -190,7 +193,7 @@ rule align_filt_nonovl:
         libname=lambda wc: wc.libname
     threads: 1
     resources:
-        mem_per_cpu="4gb", 
+        mem_mb_per_cpu="4gb", 
         cpus="1", 
         time="1:00:00"
     run:
@@ -205,9 +208,10 @@ rule join_bam:
         bam_idxstats = op.join(OUT_DIR,'align/sorted/'+PREFIX+'{libname}.idxstats.txt'),
     threads: 24
     resources:
-        mem_per_cpu="4gb", 
+        mem="96gb",
+        mem_mb_per_cpu="4gb", 
         cpus="24", 
-        time="1:00:00"
+        time="1:01:00"
     run:
         shell("samtools sort -@{threads} -m2G <(samtools merge -@ {threads} -o - {input.bam_ovl} {input.bam_nonovl} ) -o {output.bam}; samtools index -@{threads} {output.bam} ; samtools idxstats {output.bam} > {output.bam_idxstats}")
 
@@ -220,7 +224,7 @@ rule downsample_bam:
         bam_downsamp = op.join(OUT_DIR,'align/downsamp/'+PREFIX+'{libname}.ds.bam'),
     threads: 4
     resources:
-        mem_per_cpu="4gb", 
+        mem_mb_per_cpu="4gb", 
         cpus="4", 
         time="1:00:00"
     run:
@@ -251,7 +255,7 @@ rule outtbl:
     output:
         table_out=outRpt #op.join(OUT_DIR,PREFIX+'sample_table.txt')
     resources:
-        mem_per_cpu="4gb", 
+        mem_mb_per_cpu="4gb", 
         cpus="1", 
         time="1:00:00"
     run:
