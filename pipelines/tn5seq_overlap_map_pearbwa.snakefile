@@ -8,11 +8,12 @@
 #   - libname  (unique name for each library)
 #   - fastq_fwd  (path to forward read fastq file)
 #   - fastq_rev  (path to reverse read fastq file)
-#   - target_name (which is the tile/target? )
 #
 # ref_fasta - path to a fasta file containing the reference from which to get the tileseq primer sequences
 #
 # ref_seqname - name of the sequence record within (ref_fasta) to use 
+#
+#   stop_after_nreads - for debugging purposes, stop after this number of reads per library
 #
 #
 #######################################################
@@ -54,7 +55,10 @@ BWA_REF = config['bwa_ref'] if 'bwa_ref' in config else config['ref_fasta']
 BWA_OPTIONS = config['bwa_options'] if 'bwa_options' in config else '-A2 -E1 -L50,50 -B3 '
 
 # TODOC
-TRIM_ADAPTOR_OPTS = "-a CTGTCTCTTATACACATCTCCGAGCCCACGAGAC -A CTGTCTCTTATACACATCTGACGCTGCCGACGA --minimum-length 40:40"
+if 'trim_adaptor_opts' in config:
+    TRIM_ADAPTOR_OPTS = config['trim_adaptor_opts']
+else:
+    TRIM_ADAPTOR_OPTS = "-a CTGTCTCTTATACACATCTCCGAGCCCACGAGAC -A CTGTCTCTTATACACATCTGACGCTGCCGACGA --minimum-length 40:40"
 
 MAX_INDEL_LEN = int(config['max_indel_len']) if 'max_indel_len' in config else 10
 
@@ -69,7 +73,7 @@ DOWNSAMP_PAIRS = int(config['downsamp_pairs']) if 'downsamp_pairs' in config els
 
 KEYCOL = 'libname' if 'keycol' not in config else config['keycol']
 
-l_reqd_cols = [ KEYCOL, 'fastq_fwd', 'fastq_rev', 'target_name' ]
+l_reqd_cols = [ KEYCOL, 'fastq_fwd', 'fastq_rev' ]
 tblSamples = pd.read_table( config['sample_table'] )
 assert all( [ col in tblSamples.columns for col in l_reqd_cols ] ), 'sample table must have columns: '+','.join(l_reqd_cols)
 assert len(set(tblSamples[KEYCOL])) == tblSamples.shape[0], 'all libname entries must be unique'
@@ -95,12 +99,40 @@ rule all:
     input:
         lOutFiles
 
+rule countinputs:
+    # just count the inputs
+    input:
+        fq_fwd = lambda wc: tblSamples.loc[ wc.libname ][ 'fastq_fwd' ],
+        fq_rev = lambda wc: tblSamples.loc[ wc.libname ][ 'fastq_rev' ],
+    output:
+        counts_input = op.join(OUT_DIR,'fastq/'+PREFIX+'{libname}.input.linects.txt')
+    log: op.join(OUT_DIR,'fastq/'+PREFIX+'{libname}.countinputs.log')
+    threads: 8
+    resources:
+        mem_per_cpu="4gb", 
+        cpus="8", 
+        time="0:30:00"
+    run:
+        if 'stop_after_nreads' in config:
+            nlines = 4 * int(config['stop_after_nreads'])
+            shell("""
+                set +o pipefail;  #fun fact, when head breaks the pipe is returns nonzero exit code
+                pigz -d -c -p8 {input.fq_fwd} | head -n {nlines} | wc -l > {output.counts_input}
+            """)
+        else:
+            shell("""
+                pigz -d -c -p8 {input.fq_fwd} | wc -l > {output.counts_input}
+            """)
+
 rule trimadaptors:
     # just count the inputs
     input:
         fq_fwd = lambda wc: tblSamples.loc[ wc.libname ][ 'fastq_fwd' ],
         fq_rev = lambda wc: tblSamples.loc[ wc.libname ][ 'fastq_rev' ],
     output:
+        temp_head_fwd_fq=temp(op.join(OUT_DIR,'fastq/'+PREFIX+'{libname}.temp.forward.fastq')),
+        temp_head_rev_fq=temp(op.join(OUT_DIR,'fastq/'+PREFIX+'{libname}.temp.reverse.fastq')),
+
         fq_fwd_trim = temp(op.join(OUT_DIR,'fastq/'+PREFIX+'{libname}.trim.fwd.fq')),
         fq_rev_trim = temp(op.join(OUT_DIR,'fastq/'+PREFIX+'{libname}.trim.rev.fq')),
         trim_log = op.join(OUT_DIR,'fastq/'+PREFIX+'{libname}.destuff.log'),
@@ -111,9 +143,20 @@ rule trimadaptors:
         time="1:00:00"
     threads: 24
     run:
-        shell("""
-            cutadapt -j {threads} {TRIM_ADAPTOR_OPTS} -o {output.fq_fwd_trim} -p {output.fq_rev_trim} {input.fq_fwd} {input.fq_rev} > {output.trim_log}
-        """)
+        if 'stop_after_nreads' in config:
+            nlines = 4 * int(config['stop_after_nreads'])
+            shell("""
+                set +o pipefail;  #fun fact, when head breaks the pipe is returns nonzero exit code
+                pigz -d -c -p8 {input.fq_fwd} | head -n {nlines} > {output.temp_head_fwd_fq}
+                pigz -d -c -p8 {input.fq_rev} | head -n {nlines} > {output.temp_head_rev_fq}
+                cutadapt -j {threads} {TRIM_ADAPTOR_OPTS} -o {output.fq_fwd_trim} -p {output.fq_rev_trim} {output.temp_head_fwd_fq} {output.temp_head_rev_fq} > {output.trim_log}
+                """)
+            
+        else:
+            shell( """
+                touch {output.temp_head_fwd_fq} {output.temp_head_rev_fq}
+                cutadapt -j {threads} {TRIM_ADAPTOR_OPTS} -o {output.fq_fwd_trim} -p {output.fq_rev_trim} {input.fq_fwd} {input.fq_rev} > {output.trim_log}
+            """)
 
 rule overlap:
     # merge overlapping read pairs

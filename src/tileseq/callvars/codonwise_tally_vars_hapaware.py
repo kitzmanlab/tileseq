@@ -158,7 +158,8 @@ def main():
         for ocodon in mTransTbl:
             if wtcodon==ocodon: continue
             elif 'N' in ocodon: continue
-            elif 'N' in wtcodon:
+            elif 'N' in wtcodon and not (wtcodon in ('CTN','GTN','TCN','CCN','ACN','GCN','CGN','GGN')):  
+                # allow if it's a four-fold degenerate codon
                 raise ValueError(f'wt codon {codon_num} has N, but degenerate bases not allowed in reference')
             tbl_muts_templ['aa_num'].append(codon_num)
             tbl_muts_templ['codon_ref'].append(wtcodon)

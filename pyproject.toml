@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools", "cython", "pysam", "numpy"]
+build-backend = "setuptools.build_meta"
+
+
+[project]
+name = "tileseq"
+version = "0.0"
+dependencies = [
+  "numpy",
+  "scipy",
+  "pysam"
+]
+
+#[tool.setuptools]
+#ext-modules = [
+#     {name="tileseq.callvars.varcall_common", sources=["src/tileseq/callvars/varcall_common.pyx"],}
+#]
+
+[project.scripts]
+'filt_indel_mask_aligns' = 'tileseq.align.filt_indel_mask_aligns:main'
+'filt_indel_mask_aligns_PE' = 'tileseq.align.filt_indel_mask_aligns_PE:main'
+'tile_reads_call_vars' = 'tileseq.callvars.tile_reads_call_vars:main'
+'shotty_reads_call_vars' = 'tileseq.callvars.shotty_reads_call_vars:main'
+'codonwise_tally_vars_hapaware' = 'tileseq.callvars.codonwise_tally_vars_hapaware:main'
+'flag_highcount_haps' = 'tileseq.callvars.flag_highcount_haps:main'
+
+'qc_summary_plots' = 'tileseq.plots.qc_summary_plots:main'
+'plot_mut_freq_by_pos' = 'tileseq.plots.plot_mut_freq_by_pos:main'
+'hap_wfalls' = 'tileseq.plots.hap_wfalls:main'
+'cross_sample_hap_overlap_plots' = 'tileseq.plots.cross_samp_hap_overlap_plots:main'
+
+'selection_qc_plots' = 'tileseq.quickqc.selection_qc_plots:main'
+

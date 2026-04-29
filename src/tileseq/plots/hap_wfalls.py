@@ -33,17 +33,21 @@ def plot_varfreq_wfall_allcodonposs_byed(
     for ied,ed in enumerate(range(1,4)):
         vt_ed=vt.loc[vt['ed_dist']==ed]
         cts=np.array(vt_ed[count_col])
-        ax[0].scatter( x=rescalex(np.arange(cts.shape[0])), y=cts[np.argsort(-cts)], label='%d edits'%ed, s=1 )
-               
-        cscts=np.cumsum( cts[np.argsort(-cts)] )
-        ax[1].scatter( x=rescalex(np.arange(cts.shape[0])), y=cscts/cscts[-1], label='%d edits'%ed, s=1 )
-    
-    cts=np.array(vt[count_col])
-    ax[0].scatter( x=rescalex(np.arange(cts.shape[0])), y=cts[np.argsort(-cts)], label='overall', s=1)
-    cscts=np.cumsum( cts[np.argsort(-cts)] )
-    ax[1].scatter( x=rescalex(np.arange(cts.shape[0])), y=cscts/cscts[-1], label='overall', s=1)
+
+        if cts.shape[0]>0:    
+            ax[0].scatter( x=rescalex(np.arange(cts.shape[0])), y=cts[np.argsort(-cts)], label='%d edits'%ed, s=1 )
                 
-    ax[0].legend()
+            cscts=np.cumsum( cts[np.argsort(-cts)] )
+            ax[1].scatter( x=rescalex(np.arange(cts.shape[0])), y=cscts/cscts[-1], label='%d edits'%ed, s=1 )
+        
+    cts=np.array(vt[count_col])
+
+    if cts.shape[0]>0:
+        ax[0].scatter( x=rescalex(np.arange(cts.shape[0])), y=cts[np.argsort(-cts)], label='overall', s=1)
+        cscts=np.cumsum( cts[np.argsort(-cts)] )
+        ax[1].scatter( x=rescalex(np.arange(cts.shape[0])), y=cscts/cscts[-1], label='overall', s=1)
+                    
+        ax[0].legend()
     
     ax[0].set_ylabel('reads')
     ax[1].set_ylabel('cumul. frac of reads')
@@ -86,16 +90,19 @@ def plot_wfall_hapcts(
         rescalex=lambda x:x
         
     cts=np.array(hc[count_col])
-    ax[0].scatter( x=rescalex(1+np.arange(cts.shape[0])), y=cts[np.argsort(-cts)], label='overall', s=1)
-    cscts=np.cumsum( cts[np.argsort(-cts)] )
-    ax[1].scatter( x=rescalex(1+np.arange(cts.shape[0])), y=cscts/cscts[-1], label='overall', s=1)
+
+    if cts.shape[0]>0:
+        ax[0].scatter( x=rescalex(1+np.arange(cts.shape[0])), y=cts[np.argsort(-cts)], label='overall', s=1)
+        cscts=np.cumsum( cts[np.argsort(-cts)] )
+        ax[1].scatter( x=rescalex(1+np.arange(cts.shape[0])), y=cscts/cscts[-1], label='overall', s=1)
 
     cts=np.array(hc.loc[ hc['counted_codonwise'], count_col] )
-    ax[0].scatter( x=rescalex(1+np.arange(cts.shape[0])), y=cts[np.argsort(-cts)], label='usable (1mis)', s=1)
-    cscts=np.cumsum( cts[np.argsort(-cts)] )
-    ax[1].scatter( x=rescalex(1+np.arange(cts.shape[0])), y=cscts/cscts[-1], label='usable (1mis)', s=1)
-                
-    ax[0].legend()
+    if cts.shape[0]>0:
+        ax[0].scatter( x=rescalex(1+np.arange(cts.shape[0])), y=cts[np.argsort(-cts)], label='usable (1mis)', s=1)
+        cscts=np.cumsum( cts[np.argsort(-cts)] )
+        ax[1].scatter( x=rescalex(1+np.arange(cts.shape[0])), y=cscts/cscts[-1], label='usable (1mis)', s=1)
+                    
+        ax[0].legend()
     
     ax[0].set_ylabel('reads')
     ax[1].set_ylabel('cumul. frac of reads')

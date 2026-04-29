@@ -108,9 +108,10 @@ def process_cdna_reads(
     var_min_mean_bq,
     var_min_min_bq,
     codon_pos_offset=0,
-    cdna_pos_offset=0 ):
+    cdna_pos_offset=0,
+    passthru_tags=[] ):
 
-    out = odict( [ (col,None) for col in hdrOut ] )
+    out = odict( [ (col,None) for col in hdrOut+passthru_tags ] )
 
     # bamline.ref_end = 1 past last aligned base
     if not ((bamline.reference_start <= tile_target[1]) and (bamline.reference_end - 1 >= tile_target[2])):
@@ -118,6 +119,9 @@ def process_cdna_reads(
         return None
 
     out['readname'] = bamline.query_name
+
+    for tag in passthru_tags:
+        out[tag] = bamline.get_tag(tag)
 
     # bamline.ref_end = 1 past last aligned base
 
@@ -398,9 +402,14 @@ def main():
 
     opts.add_argument('--out_read_counts', required=True, dest='out_read_counts')
 
+    opts.add_argument('--passthru_tags', default=None, type=str, dest='passthru_tags',
+        help='comma delimited list of tags to passthrough from the bam file to the output')
+
     o = opts.parse_args()
 
     stop_after = o.stop_after
+
+    passthru_tags = [] if o.passthru_tags is None else o.passthru_tags.split(',')
 
     target_chrom = o.orf_interval[0]
 
@@ -439,7 +448,8 @@ def main():
                    o.tile_min_mean_bq,
                    o.tile_min_min_bq,
                    o.var_min_mean_bq,
-                   o.var_min_min_bq )
+                   o.var_min_min_bq,
+                   passthru_tags=passthru_tags )
 
             if res is None:
                 Nskipped+=1
