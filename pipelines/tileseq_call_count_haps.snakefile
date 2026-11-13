@@ -40,6 +40,7 @@
 
 import os.path as op
 import os
+import re
 import pandas as pd
 import pysam 
 import Bio.Seq
@@ -86,6 +87,23 @@ tblSamples = pd.merge(
 lLibs = tblSamples[KEYCOL].unique()
 
 tblSamples = tblSamples.set_index( KEYCOL,drop=False )
+
+########
+# optional pairwise mode: sample_table column (named by config 'pairwise_muts_defined') giving,
+# per library, a comma-delimited list of defined protein mutations aa_num:aa_ref>aa_mut
+
+PAIRWISE_COL = config['pairwise_muts_defined'] if 'pairwise_muts_defined' in config else None
+
+def parse_pairwise_muts(s):
+    if PAIRWISE_COL is None or s is None or (isinstance(s,float) and pd.isna(s)) or str(s).strip()=='':
+        return []
+    lmuts = [ x.strip() for x in str(s).split(',') if x.strip()!='' ]
+    for m in lmuts:
+        assert re.fullmatch(r'\d+:[A-Za-z]{3}>(?:[A-Za-z]{3}|\*)', m), f'pairwise mutation [{m}] must be of form aa_num:aa_ref>aa_mut, e.g., 725:Gly>Arg'
+    return lmuts
+
+dLibPairwise = { lib: parse_pairwise_muts( tblSamples.loc[lib, PAIRWISE_COL] ) if PAIRWISE_COL is not None else [] for lib in lLibs }
+
 
 ########
 # expected output files
@@ -163,9 +181,11 @@ rule tallyvars:
         ref_seqname = config['ref_seqname'],
         orf_interval = config['orf_interval'],
         multi_syn_resolve = config['multi_syn_resolve'] if 'multi_syn_resolve' in config else 'random',
+        pairwise_muts = lambda wc: ','.join(dLibPairwise[wc.libname]),
         libname=lambda wc: wc.libname,
     threads: 1
-    run:     
+    run:
+        pairwise_opts = f'--pairwise_muts {params.pairwise_muts}' if len(dLibPairwise[params.libname])>0 else ''
         shell("""
             codonwise_tally_vars_hapaware \
                 --ref_fasta {params.ref_fasta} \
@@ -175,7 +195,8 @@ rule tallyvars:
                 --out_hap_tbl {output.haptbl} \
                 --out_cvg_tbl {output.cvgtbl} \
                 --out_byread_status_tbl {output.byreadhapstatus} \
-                --out_count_tbl {output.vartbl} > {output.tallylog}
+                --out_count_tbl {output.vartbl} \
+                {pairwise_opts} > {output.tallylog}
         """
         )
 

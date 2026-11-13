@@ -78,6 +78,11 @@ def main():
 
     opts.add_argument('--min_cpm_perhap',default=10, type=float, dest='min_cpm_perhap', help='minimum cpm per haplotype to be counted as passing the threshold - note that any below-threshold haplotypes counts will still be accumulated')
 
+    opts.add_argument('--pairwise_muts', default=None, dest='pairwise_muts',
+        help='comma-delimited list of defined "background" protein mutations, aa_num:aa_ref>aa_mut (e.g., 725:Gly>Arg,719:Ile>Asn). '
+             'haplotypes with one defined mutation plus one other mis/nonsense mutation are tallied under that other mutation with background_mut set; '
+             'haplotypes with two or more other mis/nonsense mutations are not counted')
+
     # opts.add_argument('--tile_amplicon', required=True,  type=chrStartStopArg_11incl_to_00incl, dest='tile_amplicon',
     #     help='interval for teh amplicon itself, including constant primer regions, 1-based, inclusive')
 
@@ -175,9 +180,53 @@ def main():
 
     tbl_muts_templ2 = pd.DataFrame(tbl_muts_templ).set_index( ['aa_num','codon_ref','codon_mut'] )
 
-    # (codon_num,wt_codon,mut_codon)->count
+    # (aa_num, codon_ref, codon_mut, background_mut)->count ; background_mut is '' when none
     cts_singlemut = defaultdict(float)
     cts_singlemut_plussyn = defaultdict(float)
+
+    # pairwise mode: defined background mutations, keys matching vars_pro_eff strings, e.g. '725:Gly>Arg'
+    set_pw = set()
+    if o.pairwise_muts:
+        for s in o.pairwise_muts.split(','):
+            s = s.strip()
+            if s == '': continue
+            p0, p1 = s.split(':')
+            r, m = p1.split('>')
+            set_pw.add( f'{int(p0)}:{r}>{m}' )
+    m_hap_focal = {}   # hapid -> focal background mutation (chosen at random if several match)
+    m_hap_nbg = {}     # hapid -> number of defined background mutations matched
+    summary_pairwise = 0
+    summary_pairwise_notcounted = 0
+
+    def split_nonempty(s):
+        return s.split(',') if s else []
+
+    def touch_hap(hapid, status, scv, ed):
+        # register/accumulate a haplotype; scv=None for haps not counted codonwise
+        if hapid not in m_hap_idx:
+            ihap = len(tbl_haps_out['hap'])
+            m_hap_idx[hapid] = ihap
+            tbl_haps_out['hap'].append(hapid)
+            tbl_haps_out['status'].append(status)
+            tbl_haps_out['total_counts'].append(0)
+            tbl_haps_out['counted_codonwise'].append(scv is not None)
+            if scv is not None:
+                tbl_haps_out['aa_num'].append(scv[0])
+                tbl_haps_out['codon_ref'].append(scv[1])
+                tbl_haps_out['codon_mut'].append(scv[2])
+                rec_cod2aa = tbl_muts_templ2.loc[ scv ]
+                for c in ['cdna_coord','aa_ref','aa_mut','class']:
+                    tbl_haps_out[c].append(rec_cod2aa[c])
+            else:
+                tbl_haps_out['aa_num'].append(-1)
+                tbl_haps_out['codon_ref'].append('')
+                tbl_haps_out['codon_mut'].append('')
+                for c in ['cdna_coord','aa_ref','aa_mut','class']:
+                    tbl_haps_out[c].append('')
+            tbl_haps_out['ed_dist'].append(ed)
+        else:
+            ihap = m_hap_idx[hapid]
+        tbl_haps_out['total_counts'][ihap]+=1
 
     reader = pd.read_table(o.per_read_tbl, chunksize=10000, compression='infer')
 
@@ -314,6 +363,45 @@ def main():
                     summary_other += 1
                     continue
 
+            # pairwise / background mode.
+            #  - no defined mutation in read: counted as usual, background_mut = ''
+            #  - defined mutation(s) only: counted as usual (single mutant of the defined mut),
+            #    with background_mut = focal defined mutation
+            #  - one defined + one other mis/nonsense: counted under the other mutation,
+            #    with background_mut = focal defined mutation
+            #  - defined + two or more other mis/nonsense: not counted
+            bg_cur = ''
+            if len(set_pw) > 0:
+                lpro = split_nonempty(l['vars_pro_eff'])
+                lcdna = split_nonempty(l['vars_cdna_eff'])
+                lmut = [ (p,c) for p,c in zip(lpro,lcdna) if '=' not in p ]
+                lhit = sorted(set( p for p,c in lmut if p in set_pw ))
+                lother = [ (p,c) for p,c in lmut if p not in set_pw ]
+
+                if len(lhit) >= 1:
+                    if hapid not in m_hap_focal:
+                        m_hap_focal[hapid] = lhit[ rand.randint(0, len(lhit)) ]
+                    m_hap_nbg[hapid] = len(lhit)
+                    focal = m_hap_focal[hapid]
+
+                    if len(lother) == 0:
+                        bg_cur = focal   # falls through to normal counting as a single mutant
+                    elif len(lother) == 1:
+                        curstatus = 'pairwise'
+                        summary_pairwise += 1
+                        pvar = splitvar(lother[0][1])
+                        pscv = (1+int((pvar[0]-1)/3), pvar[1], pvar[2])
+                        cts_singlemut[ pscv + (focal,) ] += 1
+                        tbl_out_byreadstatus['status'].append(curstatus)
+                        touch_hap(hapid, curstatus, pscv, l['sum_ed_dist'])
+                        continue
+                    else:
+                        curstatus = 'pairwise_notcounted'
+                        summary_pairwise_notcounted += 1
+                        tbl_out_byreadstatus['status'].append(curstatus)
+                        touch_hap(hapid, curstatus, None, l['sum_ed_dist'])
+                        continue
+
             if l['n_codon_stopgain'] > 0:
                 curstatus='stopgain'
                 summary_stopgain += 1
@@ -346,7 +434,7 @@ def main():
                 curvar = curvar[0]
                 scv = splitvar(curvar)
                 scv = (1+int((scv[0]-1)/3),scv[1],scv[2])
-                cts_singlemut[ scv ] += 1
+                cts_singlemut[ scv + (bg_cur,) ] += 1
 
             elif (l['n_codon_stopgain']+l['n_codon_mis'])==1 and l['n_codon_syn']>1:
                 # one stopgain or mis
@@ -358,7 +446,7 @@ def main():
                         cur_ed = edvar(curvar)
                         scv = splitvar(curvar) 
                         scv = (1+int((scv[0]-1)/3),scv[1],scv[2])
-                        cts_singlemut_plussyn[ scv ] += 1 
+                        cts_singlemut_plussyn[ scv + (bg_cur,) ] += 1 
             elif (l['n_codon_stopgain']+l['n_codon_mis'])==0 and l['n_codon_syn']>1:
                 # no stopgains, no mis, only syns
                 lcurvar,lpro = l['vars_cdna_eff'].split(','), l['vars_pro_eff'].split(',')
@@ -378,17 +466,17 @@ def main():
 
                     scv = splitvar(lcurvar[isyn])
                     scv = (1+int((scv[0]-1)/3),scv[1],scv[2])
-                    cts_singlemut_plussyn[ scv ] += 1
+                    cts_singlemut_plussyn[ scv + (bg_cur,) ] += 1
                 elif o.multi_syn_resolve == 'split':
                     for cv in lcurvar:
                         scv = splitvar(cv)
                         scv = (1+int((scv[0]-1)/3),scv[1],scv[2])
-                        cts_singlemut_plussyn[ scv ] += 1./len(lcurvar)
+                        cts_singlemut_plussyn[ scv + (bg_cur,) ] += 1./len(lcurvar)
                 elif o.multi_syn_resolve == 'first':
                     isyn = 0
                     scv = splitvar(lcurvar[isyn])
                     scv = (1+int((scv[0]-1)/3),scv[1],scv[2])
-                    cts_singlemut_plussyn[ scv ] += 1
+                    cts_singlemut_plussyn[ scv + (bg_cur,) ] += 1
 
             tbl_out_byreadstatus['status'].append(curstatus)
 
@@ -442,37 +530,52 @@ def main():
     tbl_haps_out['aa_num'] = tbl_haps_out['aa_num'].astype(int)
     tbl_haps_out = tbl_haps_out.sort_values(by=['aa_num','codon_mut','total_counts'])
 
+    # background columns per haplotype ('' / 0 when no defined background mutation matched)
+    tbl_haps_out['background_mut'] = tbl_haps_out['hap'].map( lambda h: m_hap_focal.get(h, '') )
+    tbl_haps_out['n_background_mut'] = tbl_haps_out['hap'].map( lambda h: m_hap_nbg.get(h, 0) ).astype(int)
+
     tbl_haps_out.to_csv( o.out_hap_tbl, sep='\t', index=False )
 
-    cts_singlemut = pd.Series( cts_singlemut ).astype(int)
-    cts_singlemut_plussyn = pd.Series( cts_singlemut_plussyn ).astype(int)
-
     total_cts = tbl_haps_out.query('counted_codonwise==True')['total_counts'].sum()
-    if total_cts>0:    
+    if total_cts>0:
         tbl_haps_out['cpm'] = 1e6 * tbl_haps_out['total_counts'] / total_cts
     else:
         tbl_haps_out['cpm'] = 0
 
-    nhaps_abv_cpm = tbl_haps_out.query('counted_codonwise==True').groupby( ['aa_num','codon_ref','codon_mut'] )['cpm'].agg( lambda x : (x>=o.min_cpm_perhap).sum() )
-    nhaps_total = tbl_haps_out.query('counted_codonwise==True').groupby( ['aa_num','codon_ref','codon_mut'] )['cpm'].agg( 'count' )
+    gkeys = ['aa_num','codon_ref','codon_mut','background_mut']
+    nhaps_abv_cpm = tbl_haps_out.query('counted_codonwise==True').groupby( gkeys )['cpm'].agg( lambda x : (x>=o.min_cpm_perhap).sum() )
+    nhaps_total = tbl_haps_out.query('counted_codonwise==True').groupby( gkeys )['cpm'].agg( 'count' )
 
-    bycodon_tbl = pd.DataFrame( tbl_muts_templ ).set_index( ['aa_num','codon_ref','codon_mut'] )
-    bycodon_tbl['singlemut_reads'] = cts_singlemut
-    bycodon_tbl['singlemut_reads'] = bycodon_tbl['singlemut_reads'].fillna(0).astype(int)
-    bycodon_tbl['singlemut_allowsyn_reads'] = cts_singlemut_plussyn
-    bycodon_tbl['singlemut_allowsyn_reads'] = bycodon_tbl['singlemut_allowsyn_reads'].fillna(0).astype(int)
+    # per-variant table: one row per codon mutation with background_mut='' (as before), plus one
+    # row per (codon mutation, background_mut) that has any counts
+    bg_keys = sorted( set( k[:3]+(k[3],) for k in set(cts_singlemut)|set(cts_singlemut_plussyn) if k[3] != '' ) )
+    tbl_bg = pd.DataFrame( bg_keys, columns=['aa_num','codon_ref','codon_mut','background_mut'] )
+    tbl_bg = tbl_bg.merge( tbl_muts_templ2.reset_index(), on=['aa_num','codon_ref','codon_mut'], how='left' )
 
-    bycodon_tbl['nhaps_total'] = nhaps_total
-    bycodon_tbl['nhaps_total'] = bycodon_tbl['nhaps_total'].fillna(0).astype(int)
-    bycodon_tbl['nhap_abv_cpm'] = nhaps_abv_cpm
-    bycodon_tbl['nhap_abv_cpm'] = bycodon_tbl['nhap_abv_cpm'].fillna(0).astype(int)
+    tbl_main = pd.DataFrame( tbl_muts_templ )
+    tbl_main['background_mut'] = ''
+    tbl_bycodon = pd.concat( [tbl_main, tbl_bg[ list(tbl_main.columns) ]], ignore_index=True )
+    bycodon_tbl = tbl_bycodon.set_index( gkeys )
+
+    def to_col(cts):
+        s = pd.Series( dict(cts), dtype=float ) if len(cts)>0 else pd.Series( dtype=float )
+        return s.reindex( bycodon_tbl.index ).fillna(0).astype(int)
+
+    bycodon_tbl['singlemut_reads'] = to_col( cts_singlemut )
+    bycodon_tbl['singlemut_allowsyn_reads'] = to_col( cts_singlemut_plussyn )
+
+    bycodon_tbl['nhaps_total'] = nhaps_total.reindex( bycodon_tbl.index ).fillna(0).astype(int)
+    bycodon_tbl['nhap_abv_cpm'] = nhaps_abv_cpm.reindex( bycodon_tbl.index ).fillna(0).astype(int)
     bycodon_tbl['thresh_cpm'] = o.min_cpm_perhap
-    
+
     cvg_tbl=pd.DataFrame(
         { 'codon_num':np.arange(1,Ncodons+1),
           'total_pass_reads': codnumz_to_cvg }  )
 
-    bycodon_tbl.to_csv( o.out_count_tbl, sep='\t' )
+    # background_mut is written blank (null) when there is no background mutation
+    bycodon_out = bycodon_tbl.reset_index()
+    bycodon_out['background_mut'] = bycodon_out['background_mut'].replace('', np.nan)
+    bycodon_out.to_csv( o.out_count_tbl, sep='\t', index=False )
 
     if o.out_cvg_tbl is not None:
         cvg_tbl.to_csv( o.out_cvg_tbl, index=False, sep='\t' )
@@ -492,6 +595,8 @@ def main():
     print('summary_multimis_inclsyn',summary_multimis_inclsyn)
     print('summary_other',summary_other)
     print('summary_blocked_haplist',summary_blocked_haplist)
+    print('summary_pairwise',summary_pairwise)
+    print('summary_pairwise_notcounted',summary_pairwise_notcounted)
 
 
 if __name__ == '__main__':                
