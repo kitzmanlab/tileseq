@@ -464,6 +464,23 @@ def plot_aasc_hmap_link_to_splot_indiv_vars(
     return p
 
 
+def select_background(vt, background_mut=None):
+    """ restrict a varcount table to one background-mutation class.
+
+    if the table has no background_mut column, it is returned unchanged (older pipeline output).
+    if background_mut is given, keep rows where background_mut equals it.
+    otherwise keep rows with a blank / null background_mut (the no-background class).
+    """
+    if 'background_mut' not in vt.columns:
+        return vt
+    bg = vt['background_mut']
+    if background_mut is not None:
+        keep = bg.astype(str).str.strip() == background_mut
+    else:
+        keep = bg.isna() | (bg.astype(str).str.strip() == '')
+    return vt.loc[keep].copy()
+
+
 def main():
 
     def intRange(s):
@@ -499,6 +516,11 @@ def main():
 
     opts.add_argument('--include_hap_counts', default=False, action='store_true', dest='include_hap_counts')
 
+    opts.add_argument('--background_mut', default=None, dest='background_mut',
+                      help='if given, only use variant counts whose background_mut equals this value (e.g., 725:Gly>Arg). '
+                           'if not given, use only variant counts with a blank background_mut. '
+                           'ignored for variant count tables without a background_mut column')
+
     o = opts.parse_args()
 
     tbl_varcall_rpt = pd.read_table(o.tbl_varcall_rpt)
@@ -526,6 +548,14 @@ def main():
         vartbl_base = pd.read_table(o.varcall_path_prefix + '/' +samprow_base['vartbl'])
         vartbl_sel = pd.read_table(o.varcall_path_prefix + '/' +samprow_sel['vartbl'])
 
+        vartbl_base = select_background(vartbl_base, o.background_mut)
+        vartbl_sel = select_background(vartbl_sel, o.background_mut)
+
+        # when a background mutation is selected, write outputs under a tagged name so they don't overwrite the default outputs
+        out_tag = pairname
+        if o.background_mut is not None:
+            out_tag = pairname + '.bg_' + o.background_mut.replace(':','_').replace('>','_')
+
         if o.include_hap_counts:
             haptbl_base = pd.read_table(o.varcall_path_prefix + '/' +samprow_base['haptbl'])
             haptbl_sel = pd.read_table(o.varcall_path_prefix + '/' +samprow_sel['haptbl'])
@@ -547,29 +577,34 @@ def main():
             mincpm_base=o.min_base_cpm,
         )
 
-        fnout_ntsc = o.out_base + f'{pairname}.ntscore.tsv'
+        fnout_ntsc = o.out_base + f'{out_tag}.ntscore.tsv'
         ntsc_sel_base.to_csv( fnout_ntsc, sep='\t', index=False )
 
-        fnout_aasc = o.out_base + f'{pairname}.aascore.tsv'
+        fnout_aasc = o.out_base + f'{out_tag}.aascore.tsv'
         aasc_sel_base.to_csv( fnout_aasc, sep='\t', index=False )
-        
+
+        if ntsc_sel_base.shape[0] == 0:
+            print(f'  no variant counts for {pairname} with background [{o.background_mut}] in aa range {o.aarange}; skipping plots')
+            continue
+
         fig_score_dists = mis_non_syn_plots( aasc_sel_base,
-            pairname,
+            out_tag,
             (reprow['libname_sel'],reprow['libname_base']),
             col_score='aascore',
             col_varclass='varclass',
             log2_score_clip = aasc_clip_range,
         )  
 
-        fnout_dist_plot = o.out_base + f'{pairname}.aascore_hists.pdf'
+        fnout_dist_plot = o.out_base + f'{out_tag}.aascore_hists.pdf'
         fig_score_dists.savefig(fnout_dist_plot)
-       
+
+        title_bg = '' if o.background_mut is None else f" [background {o.background_mut}]"
 
         if not o.include_hap_counts:
             fig_heatmap = plot_aasc_hmap_link_to_splot_indiv_vars(
                 aasc_sel_base,
                 ntsc_sel_base,
-                f"{pairname} : {reprow['libname_sel']} / {reprow['libname_base']} ",
+                f"{pairname}{title_bg} : {reprow['libname_sel']} / {reprow['libname_base']} ",
                 reprow['libname_sel'],
                 reprow['libname_base'],
                 colcpm_num='cpm_sel',
@@ -586,7 +621,7 @@ def main():
             fig_heatmap = plot_aasc_hmap_link_to_splot_haps(
                 aasc_sel_base,
                 haptbl_join,
-                f"{pairname} : {reprow['libname_sel']} / {reprow['libname_base']} ",
+                f"{pairname}{title_bg} : {reprow['libname_sel']} / {reprow['libname_base']} ",
                 reprow['libname_sel'],
                 reprow['libname_base'],
                 colplot='aascore',
@@ -597,7 +632,7 @@ def main():
                 width=None
             )
 
-        fnout_heatmap = o.out_base + f'{pairname}.heatmap.html'
+        fnout_heatmap = o.out_base + f'{out_tag}.heatmap.html'
         fig_heatmap.save(fnout_heatmap)
 
 
