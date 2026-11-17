@@ -16,16 +16,20 @@ def varagg_ntscore_2samp(
     aarng,
     pcount=0.5,
     lcol_use=['singlemut_reads','singlemut_allowsyn_reads'],
+    denom_sel=None,
+    denom_base=None,
 ):
-    """ 
+    """
     aggregate variant count tables and prepare a simple two-sample nucleotide log2 ratio score (ntLOF score)
-    
+
     Args:
         vtbl_sel (_type_): _description_
         vtbl_base (_type_): _description_
         aarng (_type_): _description_
         pcount (float, optional): _description_. Defaults to 0.5.
         lcol_use (list, optional): _description_. Defaults to ['singlemut_reads','singlemut_allowsyn_reads'].
+        denom_sel (float, optional): if given, cpm_sel is normalized by this total instead of the sum over vtbl_sel rows
+        denom_base (float, optional): if given, cpm_base is normalized by this total instead of the sum over vtbl_base rows
 
     Returns:
         _type_: _description_
@@ -62,8 +66,11 @@ def varagg_ntscore_2samp(
     vj['cts_sel'] += pcount
     vj['cts_base'] += pcount
     
-    vj['cpm_sel'] = 1e6 * vj['cts_sel']/vj['cts_sel'].sum()
-    vj['cpm_base'] = 1e6 * vj['cts_base']/vj['cts_base'].sum()    
+    if denom_sel is None: denom_sel = vj['cts_sel'].sum()
+    if denom_base is None: denom_base = vj['cts_base'].sum()
+
+    vj['cpm_sel'] = 1e6 * vj['cts_sel']/denom_sel
+    vj['cpm_base'] = 1e6 * vj['cts_base']/denom_base
         
     vj['ntscore'] = np.log2( vj['cpm_sel'] / vj['cpm_base'] )
         
@@ -464,6 +471,13 @@ def plot_aasc_hmap_link_to_splot_indiv_vars(
     return p
 
 
+def total_pcount_counts(vt, aarng, lcol_use, pcount):
+    """ normalization total for one table: sum over all rows in aarng of (summed counts + pcount) """
+    vt = vt.loc[ (vt['aa_num']>=aarng[0]) & (vt['aa_num']<=aarng[1]) ]
+    cts = vt[ lcol_use ].fillna(0).sum(axis=1)
+    return float((cts + pcount).sum())
+
+
 def select_background(vt, background_mut=None):
     """ restrict a varcount table to one background-mutation class.
 
@@ -516,6 +530,10 @@ def main():
 
     opts.add_argument('--include_hap_counts', default=False, action='store_true', dest='include_hap_counts')
 
+    opts.add_argument('--norm_within_background', default=False, action='store_true', dest='norm_within_background',
+                      help='normalize per-variant counts by the total within the selected background_mut class. '
+                           'by default, counts are normalized by the total over all background classes')
+
     opts.add_argument('--background_mut', default=None, dest='background_mut',
                       help='if given, only use variant counts whose background_mut equals this value (e.g., 725:Gly>Arg). '
                            'if not given, use only variant counts with a blank background_mut. '
@@ -548,6 +566,13 @@ def main():
         vartbl_base = pd.read_table(o.varcall_path_prefix + '/' +samprow_base['vartbl'])
         vartbl_sel = pd.read_table(o.varcall_path_prefix + '/' +samprow_sel['vartbl'])
 
+        # normalization totals: over all background classes unless --norm_within_background
+        if o.norm_within_background:
+            denom_sel = denom_base = None
+        else:
+            denom_sel = total_pcount_counts(vartbl_sel, o.aarange, cols_counts_include, o.pcount)
+            denom_base = total_pcount_counts(vartbl_base, o.aarange, cols_counts_include, o.pcount)
+
         vartbl_base = select_background(vartbl_base, o.background_mut)
         vartbl_sel = select_background(vartbl_sel, o.background_mut)
 
@@ -568,6 +593,8 @@ def main():
             aarng=o.aarange,
             pcount=o.pcount,
             lcol_use=cols_counts_include,
+            denom_sel=denom_sel,
+            denom_base=denom_base,
         )
         
         ntsc_sel_base = ntsc_sel_base.loc[ ntsc_sel_base.aa_num.between( o.aarange[0], o.aarange[1] , inclusive='both') ]
