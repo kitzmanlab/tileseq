@@ -379,19 +379,24 @@ def main():
                 lother = [ (p,c) for p,c in lmut if p not in set_pw ]
 
                 if len(lhit) >= 1:
+                    m_hap_nbg[hapid] = len(lhit)
+
+                if len(lhit) >= 1 and len(lother) >= 1:
                     if hapid not in m_hap_focal:
                         m_hap_focal[hapid] = lhit[ rand.randint(0, len(lhit)) ]
-                    m_hap_nbg[hapid] = len(lhit)
                     focal = m_hap_focal[hapid]
 
-                    if len(lother) == 0:
-                        bg_cur = focal   # falls through to normal counting as a single mutant
-                    elif len(lother) == 1:
+                    if len(lother) == 1:
                         curstatus = 'pairwise'
                         summary_pairwise += 1
                         pvar = splitvar(lother[0][1])
                         pscv = (1+int((pvar[0]-1)/3), pvar[1], pvar[2])
-                        cts_singlemut[ pscv + (focal,) ] += 1
+                        # same convention as the normal path: a read with only one mis/nonsense
+                        # counts for singlemut_reads only if it has no syn; with syn it is allowsyn-only
+                        if l['n_codon_syn'] == 0:
+                            cts_singlemut[ pscv + (focal,) ] += 1
+                        else:
+                            cts_singlemut_plussyn[ pscv + (focal,) ] += 1
                         tbl_out_byreadstatus['status'].append(curstatus)
                         touch_hap(hapid, curstatus, pscv, l['sum_ed_dist'])
                         continue
@@ -436,7 +441,7 @@ def main():
                 scv = (1+int((scv[0]-1)/3),scv[1],scv[2])
                 cts_singlemut[ scv + (bg_cur,) ] += 1
 
-            elif (l['n_codon_stopgain']+l['n_codon_mis'])==1 and l['n_codon_syn']>1:
+            elif (l['n_codon_stopgain']+l['n_codon_mis'])==1 and l['n_codon_syn']>=1:
                 # one stopgain or mis
                 for curvar,pro in zip( l['vars_cdna_eff'].split(','), 
                                   l['vars_pro_eff'].split(',') ):
