@@ -185,7 +185,7 @@ rule tallyvars:
         libname=lambda wc: wc.libname,
     threads: 1
     run:
-        pairwise_opts = f'--pairwise_muts {params.pairwise_muts}' if len(dLibPairwise[params.libname])>0 else ''
+        pairwise_opts = f'--pairwise_muts "{params.pairwise_muts}"' if len(dLibPairwise[params.libname])>0 else ''
         shell("""
             codonwise_tally_vars_hapaware \
                 --ref_fasta {params.ref_fasta} \
